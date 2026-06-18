@@ -623,7 +623,7 @@ async function guardarYSiguiente(){
   if(idn>.10&&idn<=.25)sev='Leve';
   else if(idn<=.50)sev='Moderada';
   else if(idn>.50)sev='Severa';
-  const pleurT=(hallVals.pleuritis_leve||hallVals.pleuritis_severa)?1:0;
+  const pleurT=(hallVals.pleuritis_leve===1||hallVals.pleuritis_severa===1)?1:0;
 
   const fields={
     Title:`${sesion.gN}-${sesion.consec}-${sesion.orden}`,
@@ -640,25 +640,25 @@ async function guardarYSiguiente(){
     cardiaco_izquierdo:      lobVals.cardiaco_izquierdo      ||0,
     diafragmatico_izquierdo: lobVals.diafragmatico_izquierdo ||0,
     accesorio:               lobVals.accesorio               ||0,
-    // Hallazgos (0/1)
-    cicatriz_en_pulmones:    hallVals.cicatriz_en_pulmones,
-    pleuritis_leve:          hallVals.pleuritis_leve,
-    pleuritis_severa:        hallVals.pleuritis_severa,
-    neumonia_intersticial:   hallVals.neumonia_intersticial,
-    absceso_pulmon:          hallVals.absceso_pulmon,
-    nodulo_pulmon:           hallVals.nodulo_pulmon,
-    pericarditis:            hallVals.pericarditis,
-    manchas_leche:           hallVals.manchas_leche,
-    artefacto_agua:          hallVals.artefacto_agua,
-    artefacto_sangre:        hallVals.artefacto_sangre,
-    petequias:               hallVals.petequias,
+    // Hallazgos (true/false para SharePoint)
+    cicatriz_en_pulmones:    hallVals.cicatriz_en_pulmones===1,
+    pleuritis_leve:          hallVals.pleuritis_leve===1,
+    pleuritis_severa:        hallVals.pleuritis_severa===1,
+    neumonia_intersticial:   hallVals.neumonia_intersticial===1,
+    absceso_pulmon:          hallVals.absceso_pulmon===1,
+    nodulo_pulmon:           hallVals.nodulo_pulmon===1,
+    pericarditis:            hallVals.pericarditis===1,
+    manchas_leche:           hallVals.manchas_leche===1,
+    artefacto_agua:          hallVals.artefacto_agua===1,
+    artefacto_sangre:        hallVals.artefacto_sangre===1,
+    petequias:               hallVals.petequias===1,
     // Calculados (guardados pero no mostrados)
     indice_madec:        parseFloat(idn.toFixed(4)),
     consolidacion_total: parseFloat(consol.toFixed(2)),
     categoria:           categ,
     cc_mycoplasma:       categ,
     severidad:           sev,
-    pleuritis_total:     pleurT,
+    pleuritis_total:     pleurT===1,
     perdida_gdp_gr:      parseFloat(gdpGr.toFixed(2)),
     perdida_gdp_kg:      parseFloat(gdpKg.toFixed(4)),
     registrado_por:      document.getElementById('uname').textContent,
