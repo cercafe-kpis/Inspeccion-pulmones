@@ -155,6 +155,12 @@ input:focus{outline:none;border-color:var(--gm);background:#fff;box-shadow:0 0 0
 @keyframes sp{to{transform:rotate(360deg)}}
 .spacer{height:100px;}
 
+/* OFFLINE BANNER */
+.offline-bar{display:none;background:#c07a20;color:#fff;text-align:center;font-size:12px;font-weight:500;padding:6px 1rem;}
+.offline-bar.on{display:block;}
+.sync-bar{display:none;background:var(--blue);color:#fff;text-align:center;font-size:12px;font-weight:500;padding:6px 1rem;cursor:pointer;}
+.sync-bar.on{display:block;}
+
 /* TOAST */
 .toast{
   position:fixed;bottom:5.5rem;left:50%;
@@ -214,6 +220,12 @@ const CONFIG={
 <!-- ══ APP ══ -->
 <div id="app">
 
+  <div class="offline-bar" id="offline-bar">
+    ⚠️ Sin conexión — los registros se guardarán localmente y se sincronizarán cuando haya señal
+  </div>
+  <div class="sync-bar" id="sync-bar" onclick="sincronizarPendientes()">
+    ↑ Hay registros pendientes de sincronizar — toque para sincronizar ahora
+  </div>
   <div class="ubar">
     <div class="uinfo">
       <div class="av" id="av">??</div>
@@ -454,6 +466,80 @@ async function guardarSP(fields){
   if(!r.ok){const e=await r.json();throw new Error(e.error?.message||'Error al guardar');}
   return await r.json();
 }
+
+/* ── OFFLINE QUEUE ── */
+const QUEUE_KEY='insp_pulmones_queue';
+
+function leerCola(){
+  try{return JSON.parse(localStorage.getItem(QUEUE_KEY)||'[]');}
+  catch{return [];}
+}
+
+function guardarCola(q){
+  localStorage.setItem(QUEUE_KEY,JSON.stringify(q));
+}
+
+function agregarACola(fields){
+  const q=leerCola();
+  q.push({fields,ts:new Date().toISOString(),id:Date.now()});
+  guardarCola(q);
+  actualizarSyncBar();
+}
+
+function actualizarSyncBar(){
+  const q=leerCola();
+  const syncBar=document.getElementById('sync-bar');
+  if(q.length>0){
+    syncBar.textContent=`↑ ${q.length} registro${q.length>1?'s':''} pendiente${q.length>1?'s':''} de sincronizar — toque para sincronizar ahora`;
+    syncBar.classList.add('on');
+  }else{
+    syncBar.classList.remove('on');
+  }
+}
+
+async function sincronizarPendientes(){
+  const q=leerCola();
+  if(!q.length){showToast('No hay registros pendientes','ok');return;}
+  if(!navigator.onLine){showToast('Sin conexión — intente más tarde','err');return;}
+
+  const syncBar=document.getElementById('sync-bar');
+  syncBar.textContent=`⟳ Sincronizando ${q.length} registros...`;
+
+  let ok=0, fail=0;
+  const restantes=[];
+
+  for(const item of q){
+    try{
+      await guardarSP(item.fields);
+      ok++;
+    }catch(e){
+      fail++;
+      restantes.push(item);
+    }
+  }
+
+  guardarCola(restantes);
+  actualizarSyncBar();
+
+  if(fail===0){
+    showToast(`✓ ${ok} registro${ok>1?'s':''} sincronizado${ok>1?'s':''} con SharePoint`,'ok');
+  }else{
+    showToast(`${ok} sincronizados, ${fail} fallaron — reintente`,'err');
+  }
+}
+
+/* Detectar cambios de conexión */
+window.addEventListener('online',()=>{
+  document.getElementById('offline-bar').classList.remove('on');
+  const q=leerCola();
+  if(q.length>0){
+    showToast('Conexión restaurada — sincronizando...','ok');
+    setTimeout(sincronizarPendientes,1500);
+  }
+});
+window.addEventListener('offline',()=>{
+  document.getElementById('offline-bar').classList.add('on');
+});
 </script>
 
 <!-- ══ GRANJA DROPDOWN ══ -->
@@ -671,11 +757,34 @@ async function guardarYSiguiente(){
   };
 
   try{
-    await guardarSP(fields);
-    registrados++;
-    sesion.orden++;
-    resetAnimal();
-    showToast('✓ Guardado — animal #'+(sesion.orden-1),'ok');
+    if(!navigator.onLine){
+      // Sin conexión — guardar localmente
+      agregarACola(fields);
+      registrados++;
+      sesion.orden++;
+      resetAnimal();
+      showToast('📥 Sin señal — guardado localmente (#'+(sesion.orden-1)+')','ok');
+    } else {
+      // Con conexión — guardar en SharePoint
+      try{
+        await guardarSP(fields);
+        registrados++;
+        sesion.orden++;
+        resetAnimal();
+        showToast('✓ Guardado en SharePoint — animal #'+(sesion.orden-1),'ok');
+      }catch(e){
+        // Si falla por red, guardar localmente
+        if(e.message.includes('fetch')||e.message.includes('network')||e.message.includes('Failed')){
+          agregarACola(fields);
+          registrados++;
+          sesion.orden++;
+          resetAnimal();
+          showToast('📥 Error de red — guardado localmente (#'+(sesion.orden-1)+')','ok');
+        } else {
+          throw e;
+        }
+      }
+    }
   }catch(e){
     showToast('Error: '+e.message,'err');
   }finally{
