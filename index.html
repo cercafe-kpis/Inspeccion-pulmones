@@ -566,9 +566,7 @@ function abrirG(){filtrarG(document.getElementById('s_gsearch').value);}
 function renderG(lista){
   const d=document.getElementById('s_gdrop');
   d.innerHTML=lista.length
-    ? lista.map(g=>`<div class="gopt" onclick="selG(${g.id},'${g.n.replace(/'/g,"\\'")}')">
-        <span class="gid">${g.id}</span>${g.n}
-      </div>`).join('')
+    ? lista.map(g=>`<div class="gopt" onclick="selG(${g.id},'${(g.v||g.n).replace(/'/g,"\'")}')"><span class="gid">${g.id}</span>${g.v||g.n}</div>`).join('')
     : '<div class="gopt nr">Sin resultados</div>';
 }
 function selG(id,vista,interno){
