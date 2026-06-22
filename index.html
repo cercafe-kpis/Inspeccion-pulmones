@@ -340,7 +340,7 @@ const CONFIG={
 
 <!-- ══ DATOS ══ -->
 <script>
-const GRANJAS=[{id:1,n:"LA FABIOLA"},{id:2,n:"CAMPEON"},{id:3,n:"SALAMANCA"},{id:4,n:"EL BOSQUE"},{id:5,n:"CHAMBACU"},{id:6,n:"BUENOS AIRES CER"},{id:7,n:"EL FARO"},{id:8,n:"CORCEGA"},{id:9,n:"VERSALLES"},{id:10,n:"SAN ANTONIO"},{id:11,n:"PONTEVEDRA"},{id:12,n:"SAN MIGUEL"},{id:13,n:"EL CORTIJO"},{id:14,n:"ALABAMA"},{id:15,n:"SIERRA MORENA"},{id:16,n:"DON BENITO"},{id:17,n:"LA SELVA"},{id:18,n:"OASIS"},{id:19,n:"BUENOS AIRES GAM"},{id:20,n:"EL TREBOL"},{id:21,n:"EL RETIRO"},{id:22,n:"LA SIBERITA"},{id:23,n:"FATIMA"},{id:24,n:"AGROCERDOS-VERSALLES"},{id:25,n:"LA ESTRELLA"},{id:26,n:"EL JAZMIN"},{id:27,n:"CORCEGA WTF"},{id:28,n:"EL ESTERO"},{id:29,n:"MIRAFLORES"},{id:30,n:"ALAMOS"},{id:31,n:"LOS MELLOS"},{id:32,n:"TRIUNFO"},{id:33,n:"CORCEGA WTF 2"},{id:34,n:"LLANADAS"},{id:35,n:"EL PORFIN"},{id:36,n:"LA CECILIA"},{id:37,n:"YERBABUENA"},{id:38,n:"FATIMA -HBM"},{id:39,n:"LA MARAVILLA"},{id:40,n:"GUAYMARAL"},{id:41,n:"CRECERDOS"},{id:42,n:"PROCERDOS"},{id:43,n:"LA MESETA CDO"},{id:44,n:"LA CIBERITA CDO"},{id:45,n:"LA CIMA CDO"},{id:46,n:"SAN LUIS CEBA CDO"},{id:47,n:"PRAGA CEBA CDO"},{id:48,n:"FATIMA CDO"},{id:49,n:"MONTECERDO"},{id:50,n:"SAN LORENZO CDO"},{id:51,n:"AGROPECUARIA GUAIMARAL SAS"},{id:52,n:"EL RUBI CDO"},{id:53,n:"LA ABUELITA CDO"},{id:54,n:"LA ESPERANZA CDO"},{id:55,n:"LA RUEDA CDO"},{id:56,n:"MIRAFLORES MB"},{id:57,n:"CAMILO BLANDON SILVA - LOS MELLOS"},{id:58,n:"AGROCERDOS - MONTANA"},{id:59,n:"EL PLACER"},{id:60,n:"LA VIRTUD - GC"},{id:61,n:"EL ANCLA"},{id:62,n:"YERBABUENA"}];
+const GRANJAS=[{"id": 1, "n": "LA FABIOLA", "v": "La Fabiola"}, {"id": 2, "n": "CAMPEON", "v": "Campeon"}, {"id": 4, "n": "EL BOSQUE", "v": "Salamanca"}, {"id": 6, "n": "BUENOS AIRES CER", "v": "Buenos Aires CER"}, {"id": 8, "n": "CORCEGA", "v": "Corcega"}, {"id": 9, "n": "VERSALLES", "v": "Versalles"}, {"id": 15, "n": "SIERRA MORENA", "v": "Sierramorena"}, {"id": 17, "n": "LA SELVA", "v": "La Selva"}, {"id": 18, "n": "OASIS", "v": "Oasis"}, {"id": 19, "n": "BUENOS AIRES GAM", "v": "Buenos Aires GAM"}, {"id": 20, "n": "EL TREBOL", "v": "El Trebol"}, {"id": 25, "n": "LA ESTRELLA", "v": "La Estrella"}, {"id": 26, "n": "EL JAZMIN", "v": "El Jazmin"}, {"id": 27, "n": "CORCEGA WTF", "v": "Corcega WTF"}, {"id": 28, "n": "EL ESTERO", "v": "El Estero"}, {"id": 29, "n": "MIRAFLORES", "v": "Miraflores"}, {"id": 30, "n": "ALAMOS", "v": "Alamos"}, {"id": 33, "n": "CORCEGA WTF 2", "v": "Corcega WTF2"}, {"id": 36, "n": "LA CECILIA", "v": "La Cecilia"}, {"id": 41, "n": "CRECERDOS", "v": "Crecerdos"}, {"id": 42, "n": "PROCERDOS", "v": "Procerdos"}, {"id": 44, "n": "LA CIBERITA CDO", "v": "La Ciberita"}, {"id": 46, "n": "SAN LUIS CEBA CDO", "v": "San Luis"}, {"id": 47, "n": "PRAGA CEBA CDO", "v": "Praga"}, {"id": 49, "n": "MONTECERDO", "v": "Montecerdo"}, {"id": 50, "n": "SAN LORENZO CDO", "v": "San Lorenzo"}, {"id": 51, "n": "AGROPECUARIA GUAIMARAL SAS", "v": "Guaymaral"}, {"id": 52, "n": "EL RUBI CDO", "v": "El Rubi"}, {"id": 53, "n": "LA ABUELITA CDO", "v": "La Abuelita"}, {"id": 54, "n": "LA ESPERANZA CDO", "v": "La Esperanza"}, {"id": 55, "n": "LA RUEDA CDO", "v": "La Rueda"}, {"id": 56, "n": "MIRAFLORES MB", "v": "Miraflores"}, {"id": 57, "n": "CAMILO BLANDON SILVA - LOS MELLOS", "v": "Los Mellos"}];
 
 /* Pesos Madec reales por lóbulo */
 const LOBULOS=[
@@ -554,7 +554,10 @@ window.addEventListener('offline',()=>{
 function filtrarG(q){
   const t=q.trim().toUpperCase();
   renderG(t
-    ? GRANJAS.filter(g=>g.n.toUpperCase().includes(t)||String(g.id).startsWith(t))
+    ? GRANJAS.filter(g=>
+        g.n.toUpperCase().includes(t)||
+        (g.v||'').toUpperCase().includes(t)||
+        String(g.id).startsWith(t))
     : GRANJAS
   );
   document.getElementById('s_gdrop').style.display='block';
@@ -568,10 +571,12 @@ function renderG(lista){
       </div>`).join('')
     : '<div class="gopt nr">Sin resultados</div>';
 }
-function selG(id,n){
+function selG(id,vista,interno){
+  // vista = Granja_vista (lo que ve el usuario)
+  // interno = nombre interno (lo que se guarda en SharePoint)
   document.getElementById('s_gid').value=id;
-  document.getElementById('s_gnombre').value=n;
-  document.getElementById('s_gsearch').value=n;
+  document.getElementById('s_gnombre').value=interno||vista;
+  document.getElementById('s_gsearch').value=vista;
   document.getElementById('s_gdrop').style.display='none';
 }
 document.addEventListener('click',e=>{
