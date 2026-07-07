@@ -142,13 +142,18 @@ input:focus{outline:none;border-color:var(--gm);background:#fff;box-shadow:0 0 0
 .hall-card{background:var(--card);border:1px solid var(--border);border-radius:var(--r);margin:0 1rem .75rem;overflow:hidden;}
 .hall-hdr{padding:.55rem 1rem;font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;border-bottom:1px solid var(--borderl);color:var(--muted);}
 .hall-grid{display:grid;grid-template-columns:1fr 1fr;gap:1px;background:var(--borderl);}
-.hall-item{background:var(--card);padding:.7rem .9rem;display:flex;align-items:center;justify-content:space-between;gap:8px;}
-.hall-lbl{font-size:13px;color:var(--text);flex:1;line-height:1.3;}
+.hall-item{background:var(--card);padding:.7rem .9rem;display:flex;align-items:center;justify-content:space-between;gap:6px;}
+.hall-lbl{font-size:13px;color:var(--text);flex:1;min-width:0;line-height:1.3;word-break:break-word;}
 .tg{display:flex;border:1.5px solid var(--border);border-radius:6px;overflow:hidden;flex-shrink:0;}
-.tg button{width:40px;height:38px;border:none;background:var(--surface);font-size:13px;font-weight:600;cursor:pointer;touch-action:manipulation;transition:background .1s,color .1s;color:var(--muted);}
+.tg button{width:36px;height:38px;border:none;background:var(--surface);font-size:13px;font-weight:600;cursor:pointer;touch-action:manipulation;transition:background .1s,color .1s;color:var(--muted);}
 .tg button:first-child{border-right:1px solid var(--border);}
 .tg button.no-on{background:var(--gl);color:var(--g);}
 .tg button.si-on{background:var(--redl);color:var(--red);}
+
+/* En pantallas angostas, una sola columna evita que la etiqueta y el toggle Sí/No se apreten */
+@media(max-width:380px){
+  .hall-grid{grid-template-columns:1fr;}
+}
 
 /* BARRA INFERIOR FIJA */
 .btm{
