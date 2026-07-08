@@ -530,34 +530,42 @@ function actualizarSyncBar(){
   }
 }
 
+let _sincronizando=false; // evita que dos sincronizaciones concurrentes dupliquen registros en SharePoint
+
 async function sincronizarPendientes(){
+  if(_sincronizando)return; // ya hay una sincronización en curso — ignorar este disparo (manual o automático)
   const q=leerCola();
   if(!q.length){showToast('No hay registros pendientes','ok');return;}
   if(!navigator.onLine){showToast('Sin conexión — intente más tarde','err');return;}
 
+  _sincronizando=true;
   const syncBar=document.getElementById('sync-bar');
   syncBar.textContent=`⟳ Sincronizando ${q.length} registros...`;
 
   let ok=0, fail=0;
   const restantes=[];
 
-  for(const item of q){
-    try{
-      await guardarSP(item.fields);
-      ok++;
-    }catch(e){
-      fail++;
-      restantes.push(item);
+  try{
+    for(const item of q){
+      try{
+        await guardarSP(item.fields);
+        ok++;
+      }catch(e){
+        fail++;
+        restantes.push(item);
+      }
     }
-  }
 
-  guardarCola(restantes);
-  actualizarSyncBar();
+    guardarCola(restantes);
+    actualizarSyncBar();
 
-  if(fail===0){
-    showToast(`✓ ${ok} registro${ok>1?'s':''} sincronizado${ok>1?'s':''} con SharePoint`,'ok');
-  }else{
-    showToast(`${ok} sincronizados, ${fail} fallaron — reintente`,'err');
+    if(fail===0){
+      showToast(`✓ ${ok} registro${ok>1?'s':''} sincronizado${ok>1?'s':''} con SharePoint`,'ok');
+    }else{
+      showToast(`${ok} sincronizados, ${fail} fallaron — reintente`,'err');
+    }
+  }finally{
+    _sincronizando=false;
   }
 }
 
@@ -684,16 +692,62 @@ function showScreen(id){
 
 function irSesion(){showScreen('s-sesion');}
 
-function iniciarSesion(){
+async function obtenerOrdenesExistentes(gId, consec){
+  // Consulta SharePoint por los "orden" ya guardados para esta granja+consecutivo (clave única por cerdo)
+  await resolverSP();
+  const tok=await getToken();
+  const filtro=`fields/granja_id eq ${parseInt(gId)} and fields/consecutivo eq '${consec.replace(/'/g,"''")}'`;
+  const url=`https://graph.microsoft.com/v1.0/sites/${spSiteId}/lists/${spListId}/items?$filter=${encodeURIComponent(filtro)}&$expand=fields($select=orden)&$top=999`;
+  const r=await fetch(url,{headers:{Authorization:`Bearer ${tok}`}});
+  if(!r.ok)throw new Error('No se pudo verificar duplicados ('+r.status+')');
+  const d=await r.json();
+  return (d.value||[]).map(i=>parseInt(i.fields?.orden)||0);
+}
+
+async function iniciarSesion(){
   const fecha=document.getElementById('s_fecha').value;
   const gId=document.getElementById('s_gid').value;
   const gN=document.getElementById('s_gnombre').value;
   const consec=document.getElementById('s_consec').value.trim();
-  const inicio=parseInt(document.getElementById('s_inicio').value)||1;
+  let inicio=parseInt(document.getElementById('s_inicio').value)||1;
 
   if(!fecha){showToast('Ingrese la fecha','err');return;}
   if(!gId){showToast('Seleccione una granja','err');return;}
   if(!consec){showToast('Ingrese el consecutivo','err');return;}
+
+  const btn=document.querySelector('#s-sesion .btn-primary');
+  const btnHtmlOriginal=btn.innerHTML;
+
+  // Verificar contra SharePoint si este lote ya tiene registros guardados, para evitar duplicarlos.
+  // Si no hay conexión o falla la verificación, se deja continuar (no se bloquea la captura en campo).
+  if(navigator.onLine){
+    btn.disabled=true;
+    btn.innerHTML='Verificando lote existente...';
+    try{
+      const ordenesExistentes=await obtenerOrdenesExistentes(gId, consec);
+      if(ordenesExistentes.length>0){
+        const maxOrden=Math.max(...ordenesExistentes);
+        if(ordenesExistentes.includes(inicio) || inicio<=maxOrden){
+          const continuar=confirm(
+            `⚠️ Este lote (${gN}, consecutivo ${consec}) ya tiene ${ordenesExistentes.length} cerdo(s) guardado(s) en SharePoint, hasta el orden ${maxOrden}.\n\n`+
+            `Si continúas desde el orden ${inicio}, vas a DUPLICAR registros que ya existen.\n\n`+
+            `Presiona "Aceptar" para continuar automáticamente desde el orden ${maxOrden+1} (recomendado), o "Cancelar" para revisar el consecutivo.`
+          );
+          if(!continuar){
+            btn.disabled=false;
+            btn.innerHTML=btnHtmlOriginal;
+            return;
+          }
+          inicio=maxOrden+1;
+          document.getElementById('s_inicio').value=inicio;
+        }
+      }
+    }catch(e){
+      console.warn('No se pudo verificar duplicados antes de iniciar:', e.message);
+    }
+    btn.disabled=false;
+    btn.innerHTML=btnHtmlOriginal;
+  }
 
   sesion={fecha,gId:parseInt(gId),gN,consec,orden:inicio};
   registrados=0;
