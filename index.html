@@ -651,8 +651,21 @@ function buildLobulos(){
 }
 
 function onLob(id,el){
-  let v=parseInt(el.value);
-  if(isNaN(v)||v<0){v=0;el.value=0;}
+  const raw=el.value;
+  if(raw===''){
+    // El campo quedó vacío porque el usuario está borrando para escribir otro número —
+    // no forzar un 0 aquí, o el cursor queda mal ubicado y el siguiente dígito se pega antes (ej: "020")
+    lobVals[id]=null;
+    el.classList.remove('has-val');
+    return;
+  }
+  let v=parseInt(raw,10);
+  if(isNaN(v)){
+    lobVals[id]=null;
+    el.classList.remove('has-val');
+    return;
+  }
+  if(v<0){v=0;el.value=0;}
   if(v>100){v=100;el.value=100;}
   lobVals[id]=v;
   el.classList.toggle('has-val',v>0);
