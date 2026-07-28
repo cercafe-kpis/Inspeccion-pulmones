@@ -209,6 +209,51 @@ input:focus{outline:none;border-color:var(--gm);background:#fff;box-shadow:0 0 0
 <body>
 
 <script>
+/* ═══════════════════════════════════════════════════════════════════
+   INSPECCIÓN PULMONAR — App de captura de campo (PWA)
+   ═══════════════════════════════════════════════════════════════════
+   Qué es:
+     Formulario móvil para que los técnicos de Cercafe registren, cerdo
+     por cerdo, la evaluación de lóbulos pulmonares (método Madec) y
+     hallazgos asociados (pleuritis, neumonía, etc.) en planta/campo.
+
+   Cómo se guarda:
+     Cada registro se envía a una lista de SharePoint ("InspeccionPulmones")
+     vía Microsoft Graph API, autenticando al técnico con MSAL (Azure AD).
+     Si no hay señal, el registro se guarda en una cola local
+     (localStorage) y se sincroniza automáticamente en cuanto vuelve
+     la conexión — ver sección "OFFLINE QUEUE" más abajo.
+
+   Flujo de pantallas (ids en <body>):
+     s-login    → botón de inicio de sesión Microsoft
+     s-sesion   → elegir granja, consecutivo del lote, fecha y orden inicial
+     s-captura  → un lóbulo/hallazgo a la vez, animal por animal
+
+   Secciones de este script, en orden:
+     1. CONFIG + catálogos (LOBULOS, HALLAZGOS, tabla GDP)
+     2. MSAL + Graph (login, token, lectura/escritura en SharePoint)
+     3. Cola offline (guardar localmente y sincronizar después)
+     4. Dropdown de búsqueda de granja
+     5. Captura de lóbulos (con avance automático de casilla)
+     6. Captura de hallazgos (toggles Sí/No)
+     7. Sugerencia automática de "orden inicial" al reanudar un lote
+     8. Guardado del animal (cálculo de IDN, categoría, pérdida de GDP)
+
+   Importante — principio de diseño:
+     Al técnico en campo NUNCA se le muestran indicadores calculados
+     (IDN, categoría, severidad, etc.). Esta pantalla es solo de
+     CAPTURA de datos crudos; el análisis vive en un dashboard aparte.
+   ═══════════════════════════════════════════════════════════════════ */
+
+/**
+ * Configuración de la integración con Azure AD / SharePoint.
+ * CLIENT_ID / TENANT_ID vienen del App Registration en Azure AD.
+ * SP_SITE_URL y LIST_NAME identifican el sitio y la lista de SharePoint
+ * donde se guarda cada registro (ver el bloque de notas de despliegue
+ * al final del archivo para instrucciones completas).
+ * DIAS_CEBA se usa para convertir la pérdida de GDP (gr/día) a kg totales
+ * del ciclo de ceba.
+ */
 const CONFIG={
   CLIENT_ID:'5d4e5dd1-82f1-48d0-a0b0-f104d938c770',
   TENANT_ID:'f2ea1671-e87d-4f02-9941-b721acbdbc01',
@@ -402,6 +447,14 @@ let lobVals={};
 let hallVals={};
 let registrados=0;
 
+/**
+ * Interpola la pérdida de ganancia diaria de peso (GDP, en gramos/día)
+ * a partir del % de consolidación pulmonar, usando la tabla de
+ * referencia propia de Cercafe (arreglo GDP: pares [%consolidación, gr/día]).
+ * Interpolación lineal entre los dos puntos de tabla más cercanos.
+ * @param {number} p - % de consolidación total del pulmón (0-100).
+ * @returns {number} Pérdida estimada de GDP en gramos/día.
+ */
 function interpGDP(p){
   if(p<=0)return 0;
   for(let i=1;i<GDP.length;i++){
@@ -412,10 +465,17 @@ function interpGDP(p){
 }
 </script>
 
-<!-- ══ MSAL + GRAPH ══ -->
+<!-- ══ MSAL + GRAPH ══
+     Autenticación con Azure AD (MSAL) y llamadas a Microsoft Graph
+     para leer/escribir en la lista de SharePoint. -->
 <script>
 let msalApp,spSiteId='',spListId='';
 
+/**
+ * Inicia sesión con Microsoft (ventana emergente de MSAL) y, si tiene
+ * éxito, muestra la app (showApp). Se llama desde el botón de login.
+ * Requiere que CONFIG.CLIENT_ID / CONFIG.TENANT_ID estén bien configurados.
+ */
 async function doLogin(){
   try{
 
@@ -433,6 +493,15 @@ async function doLogin(){
   }catch(e){showToast('Error: '+e.message,'err');}
 }
 
+/**
+ * Obtiene un token de acceso válido para llamar a Microsoft Graph.
+ * Primero intenta en silencio (sin interacción); si el token venció y
+ * requiere reautenticación, abre un popup de login. OJO: acquireTokenPopup
+ * necesita un "gesto de usuario" (click) para no ser bloqueado por el
+ * navegador — evitar llamar getToken() desde temporizadores automáticos
+ * sin que el usuario haya interactuado recientemente.
+ * @returns {Promise<string|null>} El access token, o null si no hay sesión iniciada.
+ */
 async function getToken(){
   if(!msalApp)return null;
   try{
@@ -447,6 +516,7 @@ async function getToken(){
   }
 }
 
+/** Cierra la sesión de Microsoft y devuelve a la pantalla de login. */
 function doLogout(){
   if(msalApp)msalApp.logout();
   else{
@@ -455,6 +525,12 @@ function doLogout(){
   }
 }
 
+/**
+ * Muestra la app ya autenticada: oculta la pantalla de login, pinta el
+ * nombre/iniciales del técnico en la barra superior, y precarga la
+ * fecha de inspección de hoy en el formulario de sesión.
+ * @param {object} acc - Cuenta de MSAL devuelta por loginPopup (acc.displayName/acc.name).
+ */
 function showApp(acc){
   document.getElementById('s-login').style.display='none';
   document.getElementById('app').style.display='block';
@@ -465,6 +541,13 @@ function showApp(acc){
 
 }
 
+/**
+ * Resuelve y guarda en caché (variables spSiteId / spListId) los IDs
+ * internos de Graph para el sitio de SharePoint (CONFIG.SP_SITE_URL) y
+ * la lista (CONFIG.LIST_NAME). Solo hace las llamadas la primera vez;
+ * las siguientes veces sale de inmediato si ya los tiene.
+ * @throws Error si el sitio o la lista no existen o no son accesibles.
+ */
 async function resolverSP(){
   if(spSiteId&&spListId)return;
   const tok=await getToken();
@@ -486,6 +569,15 @@ async function resolverSP(){
   spListId=ld.value[0].id;
 }
 
+/**
+ * Crea un ítem nuevo (un registro/cerdo) en la lista de SharePoint vía
+ * Microsoft Graph. Requiere estar en línea; si falla, el llamador
+ * (guardarYSiguiente) decide si reintentar o mandarlo a la cola local.
+ * @param {object} fields - Objeto con los mismos nombres de columna que
+ *   la lista de SharePoint (ver notas de despliegue al final del archivo).
+ * @returns {Promise<object>} El ítem creado, tal como lo devuelve Graph.
+ * @throws Error con el mensaje que devuelva Graph si la escritura falla.
+ */
 async function guardarSP(fields){
   const tok=await getToken();
   if(!tok) throw new Error('No se pudo obtener token. Inicie sesión nuevamente.');
@@ -502,18 +594,29 @@ async function guardarSP(fields){
   return await r.json();
 }
 
-/* ── OFFLINE QUEUE ── */
+/* ── OFFLINE QUEUE ──
+   Cuando no hay señal, los registros no se pierden: se guardan en
+   localStorage (QUEUE_KEY) y se reintenta subirlos automáticamente
+   en cuanto vuelve la conexión (ver el listener 'online' más abajo),
+   o manualmente si el técnico toca la barra de "pendientes por sincronizar". */
 const QUEUE_KEY='insp_pulmones_queue';
 
+/** Lee la cola de registros pendientes por sincronizar. @returns {Array<object>} */
 function leerCola(){
   try{return JSON.parse(localStorage.getItem(QUEUE_KEY)||'[]');}
   catch{return [];}
 }
 
+/** Sobrescribe la cola completa de pendientes en localStorage. @param {Array<object>} q */
 function guardarCola(q){
   localStorage.setItem(QUEUE_KEY,JSON.stringify(q));
 }
 
+/**
+ * Agrega un registro a la cola local (cuando no se pudo guardar en
+ * SharePoint) y actualiza la barra de "pendientes" en pantalla.
+ * @param {object} fields - Mismos campos que se le pasarían a guardarSP.
+ */
 function agregarACola(fields){
   const q=leerCola();
   q.push({fields,ts:new Date().toISOString(),id:Date.now()});
@@ -521,6 +624,7 @@ function agregarACola(fields){
   actualizarSyncBar();
 }
 
+/** Muestra u oculta la barra azul de "N registros pendientes de sincronizar". */
 function actualizarSyncBar(){
   const q=leerCola();
   const syncBar=document.getElementById('sync-bar');
@@ -534,6 +638,14 @@ function actualizarSyncBar(){
 
 let _sincronizando=false; // evita que dos sincronizaciones concurrentes dupliquen registros en SharePoint
 
+/**
+ * Sube a SharePoint todos los registros que estén en la cola local.
+ * Se dispara sola cuando vuelve la conexión, o al tocar la barra de
+ * pendientes. Los que fallen se quedan en la cola para reintentar
+ * después; los que tengan éxito se quitan. `_sincronizando` evita que
+ * dos sincronizaciones se corran al mismo tiempo (lo que duplicaría
+ * registros en SharePoint).
+ */
 async function sincronizarPendientes(){
   if(_sincronizando)return; // ya hay una sincronización en curso — ignorar este disparo (manual o automático)
   const q=leerCola();
@@ -585,8 +697,16 @@ window.addEventListener('offline',()=>{
 });
 </script>
 
-<!-- ══ GRANJA DROPDOWN ══ -->
+<!-- ══ GRANJA DROPDOWN ══
+     Buscador tipo "autocompletar" sobre el catálogo GRANJAS (definido
+     más abajo con id, nombre interno y nombre de vista). -->
 <script>
+/**
+ * Filtra el catálogo GRANJAS por texto libre (nombre o ID) y lo
+ * muestra en el dropdown. Se llama en cada tecla que el técnico
+ * escribe en el buscador de granja.
+ * @param {string} q - Texto escrito por el técnico.
+ */
 function filtrarG(q){
   const t=q.trim().toUpperCase();
   renderG(t
@@ -595,7 +715,9 @@ function filtrarG(q){
   );
   document.getElementById('s_gdrop').style.display='block';
 }
+/** Abre el dropdown mostrando todas las granjas (o filtradas si ya hay texto). Se usa en el evento focus del campo. */
 function abrirG(){filtrarG(document.getElementById('s_gsearch').value);}
+/** Pinta la lista de opciones de granja dentro del dropdown. @param {Array<object>} lista */
 function renderG(lista){
   const d=document.getElementById('s_gdrop');
   d.innerHTML=lista.length
@@ -604,6 +726,15 @@ function renderG(lista){
       </div>`).join('')
     : '<div class="gopt nr">Sin resultados</div>';
 }
+/**
+ * Se ejecuta al tocar una granja del dropdown: la deja seleccionada
+ * (id + nombre interno para guardar, nombre de vista para mostrar) y
+ * dispara la sugerencia automática de orden inicial si ya hay un
+ * consecutivo escrito (ver actualizarOrdenSugerido más abajo).
+ * @param {number} id - ID interno de la granja (columna granja_id).
+ * @param {string} vista - Nombre a mostrar en el campo de búsqueda.
+ * @param {string} interno - Nombre interno tal como está en SharePoint (mayúsculas).
+ */
 function selG(id,vista,interno){
   document.getElementById('s_gid').value=id;
   document.getElementById('s_gnombre').value=interno||vista;
@@ -621,6 +752,12 @@ document.addEventListener('click',e=>{
 
 <!-- ══ BUILDER DE CAMPOS ══ -->
 <script>
+/**
+ * Construye dinámicamente las casillas de entrada de cada lóbulo
+ * (uno por elemento de LOBULOS), agrupadas en sus 3 contenedores
+ * (der/izq/acc) que ya existen en el HTML. Se llama una sola vez al
+ * cargar la página (ver el listener DOMContentLoaded al final).
+ */
 function buildLobulos(){
   ['der','izq','acc'].forEach(g=>{
     const cont=document.getElementById('lrows-'+g);
@@ -653,8 +790,15 @@ function buildLobulos(){
   });
 }
 
-let lobAutoTimer=null;
+let lobAutoTimer=null; // temporizador del avance automático "un solo dígito 1-9, esperando el segundo"
 
+/**
+ * Handler onfocus de cada casilla de lóbulo: selecciona el contenido
+ * (para que escribir sobrescriba en vez de concatenar) y cancela
+ * cualquier avance automático pendiente, tanto si el foco llegó por un
+ * toque manual del técnico como por el propio avance automático.
+ * @param {HTMLInputElement} el
+ */
 function focusLob(el){
   // Al enfocar (manual o automático) cancelamos cualquier avance pendiente
   // para que no se dispare un salto de foco encima de la navegación del usuario.
@@ -662,6 +806,19 @@ function focusLob(el){
   el.select();
 }
 
+/**
+ * Handler oninput de cada casilla de lóbulo. Valida y guarda el valor
+ * (0-100) en lobVals, y decide si avanza de inmediato a la siguiente
+ * casilla o si espera un segundo dígito, según estas reglas:
+ *   - 3 dígitos (ej. "100")                → avanza de inmediato (no caben más).
+ *   - 2 dígitos que no empiezan en 0 (10-99) → avanza de inmediato (valor completo).
+ *   - 2 dígitos que empiezan en 0 (ej. "00") → caso raro, espera 450ms por seguridad.
+ *   - 1 solo dígito "0"                     → avanza de inmediato (0% es un valor completo).
+ *   - 1 solo dígito 1-9 (ej. "2")           → NO avanza; espera a que llegue el 2do dígito
+ *     (que caerá en la regla de "2 dígitos" de arriba y avanzará de inmediato).
+ * @param {string} id - id del lóbulo (ver LOBULOS), ej. 'apical_derecho'.
+ * @param {HTMLInputElement} el - la casilla que disparó el evento.
+ */
 function onLob(id,el){
   if(lobAutoTimer){clearTimeout(lobAutoTimer);lobAutoTimer=null;}
   const raw=el.value;
@@ -707,6 +864,12 @@ function onLob(id,el){
   }
 }
 
+/**
+ * Mueve el foco al siguiente lóbulo en el orden de LOBULOS (der → izq → acc).
+ * Si el lóbulo actual era el último (Accesorio), en vez de mover el foco
+ * cierra el teclado (blur), dando por completada la sección de lóbulos.
+ * @param {string} id - id del lóbulo desde el que se avanza.
+ */
 function avanzarSiguienteLob(id){
   lobAutoTimer=null;
   const idx=LOBULOS.findIndex(l=>l.id===id);
@@ -722,6 +885,11 @@ function avanzarSiguienteLob(id){
   }
 }
 
+/**
+ * Construye dinámicamente los toggles Sí/No de cada hallazgo (uno por
+ * elemento de HALLAZGOS) dentro del contenedor #hgrid. Se llama una
+ * sola vez al cargar la página.
+ */
 function buildHallazgos(){
   const g=document.getElementById('hgrid');
   g.innerHTML='';
@@ -739,6 +907,12 @@ function buildHallazgos(){
   });
 }
 
+/**
+ * Marca un hallazgo como Sí (1) o No (0) y actualiza el estilo del
+ * botón correspondiente. Se llama al tocar los botones "Sí"/"No".
+ * @param {string} id - id del hallazgo (ver HALLAZGOS).
+ * @param {0|1} v - 0 = No, 1 = Sí.
+ */
 function setH(id,v){
   hallVals[id]=v;
   document.getElementById('no-'+id).className=v===0?'no-on':'';
@@ -748,12 +922,22 @@ function setH(id,v){
 
 <!-- ══ FLUJO ══ -->
 <script>
+/**
+ * Cambia de pantalla (login / sesión / captura), mostrando solo la que
+ * tiene el id indicado y ocultando las demás.
+ * @param {string} id - id de la pantalla a mostrar (ej. 's-sesion').
+ */
 function showScreen(id){
   document.querySelectorAll('.screen').forEach(s=>s.classList.remove('on'));
   document.getElementById(id).classList.add('on');
   window.scrollTo({top:0,behavior:'instant'});
 }
 
+/**
+ * Vuelve del formulario de captura a la pantalla de sesión (botón
+ * "← Cambiar granja"), dejando los campos de granja/consecutivo/orden
+ * vacíos para el siguiente lote (ver showScreen).
+ */
 function irSesion(){
   // Limpiar granja, consecutivo y orden al volver, para no tener que borrar
   // manualmente los datos del lote anterior antes de elegir el siguiente.
@@ -766,6 +950,29 @@ function irSesion(){
   showScreen('s-sesion');
 }
 
+/* ══ SUGERENCIA AUTOMÁTICA DE "ORDEN INICIAL" ══
+   Cuando un lote se inspecciona en varios momentos (porque se corta
+   para inspeccionar otros lotes en el medio), esta sección calcula
+   automáticamente en qué # de orden va ese lote, para que el técnico
+   no tenga que recordarlo ni arriesgarse a duplicar un cerdo.
+   Se apoya en 3 fuentes de información, de la más a la menos confiable:
+     1) SharePoint (obtenerOrdenesExistentes)      → ya sincronizado, requiere señal.
+     2) Cola local de pendientes (ordenesLocalesPendientes) → vive en el
+        celular, disponible con o sin señal, mientras sea el mismo equipo.
+     3) Caché de la última consulta exitosa (leerCacheOrden/guardarCacheOrden)
+        → respaldo para cuando no hay señal y tampoco hay pendientes locales. */
+
+/**
+ * Consulta en SharePoint los "orden" ya guardados para una granja +
+ * consecutivo específicos (para saber hasta dónde va el lote).
+ * Requiere el header Prefer:HonorNonIndexedQueriesWarningMayFailRandomly
+ * porque granja_id/consecutivo no son columnas indexadas en la lista;
+ * sin ese header, Graph rechaza el filtro con 400 aunque los datos existan.
+ * @param {number|string} gId - granja_id de la granja seleccionada.
+ * @param {string} consec - Consecutivo del lote.
+ * @returns {Promise<number[]>} Lista de valores "orden" ya sincronizados.
+ * @throws Error con el detalle que devuelva Graph si la consulta falla.
+ */
 async function obtenerOrdenesExistentes(gId, consec){
   // Consulta SharePoint por los "orden" ya guardados para esta granja+consecutivo (clave única por cerdo)
   await resolverSP();
@@ -787,8 +994,15 @@ async function obtenerOrdenesExistentes(gId, consec){
   return (d.value||[]).map(i=>parseInt(i.fields?.orden)||0);
 }
 
-/* ── Órdenes conocidos localmente (para poder sugerir/verificar incluso sin señal) ── */
-
+/**
+ * Busca en la cola local (aún no sincronizada) los "orden" ya
+ * capturados en ESTE dispositivo para una granja+consecutivo dados.
+ * A diferencia de obtenerOrdenesExistentes, funciona con o sin señal
+ * porque solo lee localStorage.
+ * @param {number|string} gId
+ * @param {string} consec
+ * @returns {number[]} Valores "orden" pendientes de sincronizar.
+ */
 function ordenesLocalesPendientes(gId, consec){
   // Cerdos ya capturados en este dispositivo para este lote, que aún esperan sincronizar
   return leerCola()
@@ -798,14 +1012,30 @@ function ordenesLocalesPendientes(gId, consec){
 
 const ORDEN_CACHE_KEY='insp_pulmones_orden_cache';
 
+/** Lee el caché completo de últimas verificaciones de orden por lote. @returns {object} */
 function leerCacheOrdenes(){
   try{return JSON.parse(localStorage.getItem(ORDEN_CACHE_KEY)||'{}');}catch{return {};}
 }
+/**
+ * Guarda el resultado de la última consulta exitosa a SharePoint para
+ * un lote (máximo orden encontrado + hora), para poder usarlo como
+ * respaldo si más tarde se pierde la señal.
+ * @param {number|string} gId
+ * @param {string} consec
+ * @param {{maxOrden:number, count:number, ts:number}} data
+ */
 function guardarCacheOrden(gId, consec, data){
   const cache=leerCacheOrdenes();
   cache[`${gId}|${consec}`]=data;
   localStorage.setItem(ORDEN_CACHE_KEY,JSON.stringify(cache));
 }
+/**
+ * Recupera la última verificación exitosa guardada para un lote (o
+ * null si nunca se ha verificado con señal desde este dispositivo).
+ * @param {number|string} gId
+ * @param {string} consec
+ * @returns {{maxOrden:number,count:number,ts:number}|null}
+ */
 function leerCacheOrden(gId, consec){
   return leerCacheOrdenes()[`${gId}|${consec}`]||null;
 }
@@ -813,11 +1043,23 @@ function leerCacheOrden(gId, consec){
 let ordenCheckTimer=null;
 let ordenCheckToken=0; // evita que una respuesta vieja pise una consulta más reciente
 
+/**
+ * Handler oninput del campo "Consecutivo del lote": espera 600ms sin
+ * más teclas (debounce) y luego dispara actualizarOrdenSugerido.
+ */
 function onConsecInput(){
   if(ordenCheckTimer)clearTimeout(ordenCheckTimer);
   ordenCheckTimer=setTimeout(actualizarOrdenSugerido,600);
 }
 
+/**
+ * Calcula y escribe automáticamente el valor sugerido en "Empezar en
+ * orden #", combinando SharePoint + la cola local pendiente + el
+ * caché de la última verificación (según haya o no señal). También
+ * actualiza el texto de ayuda (#s_inicio_hint) explicando de dónde
+ * salió el número sugerido. Se dispara desde selG() (al elegir
+ * granja) y desde onConsecInput()/onblur (al escribir el consecutivo).
+ */
 async function actualizarOrdenSugerido(){
   if(ordenCheckTimer){clearTimeout(ordenCheckTimer);ordenCheckTimer=null;}
   const hint=document.getElementById('s_inicio_hint');
@@ -904,6 +1146,14 @@ async function actualizarOrdenSugerido(){
   }
 }
 
+/**
+ * Handler del botón "Iniciar captura →". Valida los campos de sesión,
+ * hace una última verificación de duplicados (contra SharePoint si hay
+ * señal, o contra la cola local si no la hay) antes de arrancar, y de
+ * ser necesario ajusta automáticamente el orden inicial y avisa al
+ * técnico con un confirm(). Si todo está en orden, guarda `sesion` en
+ * memoria y pasa a la pantalla de captura (s-captura).
+ */
 async function iniciarSesion(){
   const fecha=document.getElementById('s_fecha').value;
   const gId=document.getElementById('s_gid').value;
@@ -976,6 +1226,11 @@ async function iniciarSesion(){
   showScreen('s-captura');
 }
 
+/**
+ * Limpia el formulario de captura (lóbulos y hallazgos) para pasar al
+ * siguiente animal, y refresca el contador de orden/registrados en
+ * pantalla. Se llama después de guardar un animal exitosamente.
+ */
 function resetAnimal(){
   if(lobAutoTimer){clearTimeout(lobAutoTimer);lobAutoTimer=null;}
   // Limpiar lóbulos
@@ -997,6 +1252,27 @@ function resetAnimal(){
   document.getElementById('c-count').textContent=registrados+' registrado'+(registrados===1?'':'s');
 }
 
+/**
+ * Handler del botón "Guardar y siguiente →". Por cada animal:
+ *   1) Calcula el índice Madec ponderado (idn) sumando cada lóbulo/100 × su
+ *      peso (ver arreglo LOBULOS) — esto da directamente el % de
+ *      consolidación total del pulmón (consol = idn×100). OJO: este
+ *      índice es solo un cálculo intermedio para clasificar el animal;
+ *      NO se guarda como campo "indice_madec" (ese campo se eliminó a
+ *      nivel de animal — el IDN real del LOTE se calcula aparte en el
+ *      dashboard como CT/TCE, sumando categorías ÷ total de animales,
+ *      no promediando estos índices individuales).
+ *   2) Clasifica la categoría (1-6, según % de consolidación) y la
+ *      severidad (Leve/Moderada/Severa) — solo para guardar, nunca se
+ *      muestran al técnico.
+ *   3) Calcula la pérdida de GDP estimada (gr/día y kg del ciclo) con interpGDP.
+ *   4) Arma el objeto `fields` con las columnas exactas de SharePoint y
+ *      lo guarda: si hay señal intenta guardarSP() directo; si no hay
+ *      señal, o si guardarSP() falla por red, lo manda a la cola local
+ *      (agregarACola) para sincronizar después. Al terminar, avanza el
+ *      contador de orden y limpia el formulario (resetAnimal) para el
+ *      siguiente animal.
+ */
 async function guardarYSiguiente(){
   const btn=document.getElementById('btn-next');
   btn.disabled=true;
@@ -1096,6 +1372,11 @@ async function guardarYSiguiente(){
   }
 }
 
+/**
+ * Handler del botón "Sin lesión": registra el animal actual con todos
+ * los lóbulos y hallazgos en 0 (sin necesidad de tocar cada casilla) y
+ * avanza al siguiente. Útil cuando el pulmón se ve completamente sano.
+ */
 function saltarAnimal(){
   // Registra el animal sin marcar nada (todos en 0)
   LOBULOS.forEach(l=>{lobVals[l.id]=0;});
@@ -1103,6 +1384,12 @@ function saltarAnimal(){
   guardarYSiguiente();
 }
 
+/**
+ * Muestra una notificación breve (toast) en la parte inferior de la
+ * pantalla, que desaparece sola después de ~2.2s.
+ * @param {string} msg - Texto a mostrar.
+ * @param {'ok'|'err'} [tipo] - Color/estilo del toast (verde=ok, rojo=err).
+ */
 function showToast(msg,tipo){
   const t=document.getElementById('toast');
   t.textContent=msg;
