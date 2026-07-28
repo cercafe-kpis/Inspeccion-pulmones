@@ -641,7 +641,7 @@ function buildLobulos(){
             pattern="[0-9]*"
             placeholder="—"
             oninput="onLob('${lob.id}',this)"
-            onfocus="this.select()"
+            onfocus="focusLob(this)"
           >
           <span class="lob-unit">%</span>
         </div>`;
@@ -650,7 +650,17 @@ function buildLobulos(){
   });
 }
 
+let lobAutoTimer=null;
+
+function focusLob(el){
+  // Al enfocar (manual o automático) cancelamos cualquier avance pendiente
+  // para que no se dispare un salto de foco encima de la navegación del usuario.
+  if(lobAutoTimer){clearTimeout(lobAutoTimer);lobAutoTimer=null;}
+  el.select();
+}
+
 function onLob(id,el){
+  if(lobAutoTimer){clearTimeout(lobAutoTimer);lobAutoTimer=null;}
   const raw=el.value;
   if(raw===''){
     // El campo quedó vacío porque el usuario está borrando para escribir otro número —
@@ -669,6 +679,30 @@ function onLob(id,el){
   if(v>100){v=100;el.value=100;}
   lobVals[id]=v;
   el.classList.toggle('has-val',v>0);
+
+  // Avance automático al siguiente lóbulo, sin necesidad de tocar la pantalla.
+  if(el.value.length>=3){
+    // Con 3 dígitos ya no caben más (máx 100) -> avanzar de inmediato
+    avanzarSiguienteLob(id);
+  }else{
+    // Damos un breve instante por si el técnico sigue escribiendo el 2do dígito (ej. "2" -> "20")
+    lobAutoTimer=setTimeout(()=>avanzarSiguienteLob(id),450);
+  }
+}
+
+function avanzarSiguienteLob(id){
+  lobAutoTimer=null;
+  const idx=LOBULOS.findIndex(l=>l.id===id);
+  if(idx===-1)return;
+  const siguiente=LOBULOS[idx+1];
+  if(siguiente){
+    const next=document.getElementById('li-'+siguiente.id);
+    if(next)next.focus();
+  }else{
+    // Era el último lóbulo (Accesorio): cerramos el teclado
+    const cur=document.getElementById('li-'+id);
+    if(cur)cur.blur();
+  }
 }
 
 function buildHallazgos(){
@@ -774,6 +808,7 @@ async function iniciarSesion(){
 }
 
 function resetAnimal(){
+  if(lobAutoTimer){clearTimeout(lobAutoTimer);lobAutoTimer=null;}
   // Limpiar lóbulos
   LOBULOS.forEach(l=>{
     lobVals[l.id]=null;
