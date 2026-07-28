@@ -740,7 +740,17 @@ function showScreen(id){
   window.scrollTo({top:0,behavior:'instant'});
 }
 
-function irSesion(){showScreen('s-sesion');}
+function irSesion(){
+  // Limpiar granja, consecutivo y orden al volver, para no tener que borrar
+  // manualmente los datos del lote anterior antes de elegir el siguiente.
+  document.getElementById('s_gsearch').value='';
+  document.getElementById('s_gid').value='';
+  document.getElementById('s_gnombre').value='';
+  document.getElementById('s_consec').value='';
+  document.getElementById('s_inicio').value=1;
+  document.getElementById('s_inicio_hint').textContent='';
+  showScreen('s-sesion');
+}
 
 async function obtenerOrdenesExistentes(gId, consec){
   // Consulta SharePoint por los "orden" ya guardados para esta granja+consecutivo (clave única por cerdo)
