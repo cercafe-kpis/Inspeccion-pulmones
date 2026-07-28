@@ -684,12 +684,26 @@ function onLob(id,el){
   el.classList.toggle('has-val',v>0);
 
   // Avance automático al siguiente lóbulo, sin necesidad de tocar la pantalla.
-  if(el.value.length>=3){
+  const val=el.value; // ya con el clamp aplicado arriba
+  if(val.length>=3){
     // Con 3 dígitos ya no caben más (máx 100) -> avanzar de inmediato
     avanzarSiguienteLob(id);
-  }else{
-    // Damos un breve instante por si el técnico sigue escribiendo el 2do dígito (ej. "2" -> "20")
-    lobAutoTimer=setTimeout(()=>avanzarSiguienteLob(id),450);
+  }else if(val.length===2){
+    if(val[0]!=='0'){
+      // Dos dígitos que no arrancan en 0 (10-99): valor completo, avanzar de inmediato
+      avanzarSiguienteLob(id);
+    }else{
+      // Caso raro (ej. "00"): esperamos por seguridad
+      lobAutoTimer=setTimeout(()=>avanzarSiguienteLob(id),450);
+    }
+  }else{ // un solo dígito
+    if(val==='0'){
+      // Un solo cero inicial es un valor completo (0%): avanzar de inmediato
+      avanzarSiguienteLob(id);
+    }else{
+      // Un solo dígito 1-9: no avanzamos todavía, esperamos a que escriba el segundo dígito.
+      // En cuanto lo escriba, cae en la rama de "dos dígitos" de arriba y avanza de inmediato.
+    }
   }
 }
 
