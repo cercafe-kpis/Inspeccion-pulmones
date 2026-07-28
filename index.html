@@ -854,7 +854,7 @@ async function actualizarOrdenSugerido(){
     }
   }catch(e){
     if(miToken!==ordenCheckToken)return;
-    // Aunque haya señal, la consulta pudo fallar (token vencido, red inestable, etc.) —
+    // Aunque haya señal, la consulta pudo fallar (token vencido, red inestable, filtro rechazado, etc.) —
     // igual intentamos estimar con lo que tengamos guardado localmente antes de rendirnos.
     const cacheEntry=leerCacheOrden(gId, consec);
     const candidatos=[];
@@ -863,9 +863,9 @@ async function actualizarOrdenSugerido(){
     if(candidatos.length){
       const maxFinal=Math.max(...candidatos);
       document.getElementById('s_inicio').value=maxFinal+1;
-      hint.textContent=`No se pudo verificar en línea — usando datos guardados en este dispositivo. Se sugiere el orden ${maxFinal+1}. Verifica cuando tengas señal.`;
+      hint.textContent=`No se pudo verificar en línea (${e.message}) — usando datos guardados en este dispositivo. Se sugiere el orden ${maxFinal+1}. Verifica cuando tengas señal.`;
     }else{
-      hint.textContent='No se pudo verificar el último orden. Revísalo manualmente.';
+      hint.textContent=`No se pudo verificar el último orden (${e.message}). Revísalo manualmente.`;
     }
     console.warn('No se pudo verificar orden sugerido:', e.message);
   }
