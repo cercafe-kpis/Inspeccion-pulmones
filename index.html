@@ -289,12 +289,14 @@ const CONFIG={
 
       <div class="field">
         <label class="lbl">Consecutivo del lote</label>
-        <input type="text" id="s_consec" placeholder="Ej: 6282" inputmode="numeric">
+        <input type="text" id="s_consec" placeholder="Ej: 6282" inputmode="numeric"
+          oninput="onConsecInput()" onblur="actualizarOrdenSugerido()">
       </div>
 
       <div class="field">
         <label class="lbl">Empezar en orden #</label>
         <input type="number" id="s_inicio" value="1" min="1" inputmode="numeric">
+        <div id="s_inicio_hint" style="font-size:12px;color:var(--hint);margin-top:6px;min-height:15px;"></div>
       </div>
 
       <button class="btn-primary" onclick="iniciarSesion()">
@@ -607,6 +609,7 @@ function selG(id,vista,interno){
   document.getElementById('s_gnombre').value=interno||vista;
   document.getElementById('s_gsearch').value=vista;
   document.getElementById('s_gdrop').style.display='none';
+  actualizarOrdenSugerido();
 }
 document.addEventListener('click',e=>{
   const s=document.getElementById('s_gsearch');
@@ -751,6 +754,123 @@ async function obtenerOrdenesExistentes(gId, consec){
   return (d.value||[]).map(i=>parseInt(i.fields?.orden)||0);
 }
 
+/* ── Órdenes conocidos localmente (para poder sugerir/verificar incluso sin señal) ── */
+
+function ordenesLocalesPendientes(gId, consec){
+  // Cerdos ya capturados en este dispositivo para este lote, que aún esperan sincronizar
+  return leerCola()
+    .filter(item=>String(item.fields.granja_id)===String(gId) && String(item.fields.consecutivo)===String(consec))
+    .map(item=>parseInt(item.fields.orden)||0);
+}
+
+const ORDEN_CACHE_KEY='insp_pulmones_orden_cache';
+
+function leerCacheOrdenes(){
+  try{return JSON.parse(localStorage.getItem(ORDEN_CACHE_KEY)||'{}');}catch{return {};}
+}
+function guardarCacheOrden(gId, consec, data){
+  const cache=leerCacheOrdenes();
+  cache[`${gId}|${consec}`]=data;
+  localStorage.setItem(ORDEN_CACHE_KEY,JSON.stringify(cache));
+}
+function leerCacheOrden(gId, consec){
+  return leerCacheOrdenes()[`${gId}|${consec}`]||null;
+}
+
+let ordenCheckTimer=null;
+let ordenCheckToken=0; // evita que una respuesta vieja pise una consulta más reciente
+
+function onConsecInput(){
+  if(ordenCheckTimer)clearTimeout(ordenCheckTimer);
+  ordenCheckTimer=setTimeout(actualizarOrdenSugerido,600);
+}
+
+async function actualizarOrdenSugerido(){
+  if(ordenCheckTimer){clearTimeout(ordenCheckTimer);ordenCheckTimer=null;}
+  const hint=document.getElementById('s_inicio_hint');
+  const gId=document.getElementById('s_gid').value;
+  const consec=document.getElementById('s_consec').value.trim();
+
+  if(!gId||!consec){
+    hint.textContent='';
+    return;
+  }
+
+  // Cerdos de este lote capturados en este mismo dispositivo y aún no sincronizados —
+  // disponibles con o sin señal, porque viven en el teléfono, no en SharePoint.
+  const pendientes=ordenesLocalesPendientes(gId, consec);
+  const maxPendiente=pendientes.length?Math.max(...pendientes):null;
+
+  if(!navigator.onLine){
+    const cacheEntry=leerCacheOrden(gId, consec);
+    const candidatos=[];
+    if(cacheEntry)candidatos.push(cacheEntry.maxOrden);
+    if(maxPendiente!==null)candidatos.push(maxPendiente);
+
+    if(candidatos.length){
+      const maxFinal=Math.max(...candidatos);
+      document.getElementById('s_inicio').value=maxFinal+1;
+      const horaTxt=cacheEntry
+        ? new Date(cacheEntry.ts).toLocaleString('es-CO',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'})
+        : null;
+      hint.textContent=
+        `Sin conexión — estimado con datos guardados en este dispositivo`+
+        (horaTxt?` (última verificación en línea: ${horaTxt})`:'')+
+        `. Se sugiere continuar en el orden ${maxFinal+1}. Verifica en línea en cuanto tengas señal.`;
+    }else{
+      hint.textContent='Sin conexión: no hay datos previos en este dispositivo para verificar el último orden de este lote.';
+    }
+    return;
+  }
+
+  const miToken=++ordenCheckToken;
+  hint.textContent='Verificando último orden registrado...';
+  try{
+    const ordenesSP=await obtenerOrdenesExistentes(gId, consec);
+    if(miToken!==ordenCheckToken)return; // llegó una respuesta obsoleta, ignorar
+
+    const maxSP=ordenesSP.length?Math.max(...ordenesSP):0;
+    guardarCacheOrden(gId, consec, {maxOrden:maxSP, count:ordenesSP.length, ts:Date.now()});
+
+    // Combinamos SharePoint (ya sincronizado) con lo que este equipo tenga pendiente por sincronizar,
+    // para no sugerir un número que ya está ocupado por un registro local aún no subido.
+    const candidatos=[...ordenesSP];
+    if(maxPendiente!==null)candidatos.push(maxPendiente);
+
+    if(candidatos.length>0){
+      const maxOrden=Math.max(...candidatos);
+      document.getElementById('s_inicio').value=maxOrden+1;
+      let msg=ordenesSP.length
+        ? `Este lote ya tiene ${ordenesSP.length} cerdo(s) sincronizados (hasta el orden ${maxSP}).`
+        : `Este lote aún no tiene cerdos sincronizados en SharePoint.`;
+      if(maxPendiente!==null && maxPendiente>=maxSP){
+        msg+=` Además hay registros pendientes de sincronizar en este equipo hasta el orden ${maxPendiente}.`;
+      }
+      msg+=` Se continuará en el orden ${maxOrden+1}.`;
+      hint.textContent=msg;
+    }else{
+      document.getElementById('s_inicio').value=1;
+      hint.textContent='Lote nuevo: se iniciará en el orden 1.';
+    }
+  }catch(e){
+    if(miToken!==ordenCheckToken)return;
+    // Aunque haya señal, la consulta pudo fallar (token vencido, red inestable, etc.) —
+    // igual intentamos estimar con lo que tengamos guardado localmente antes de rendirnos.
+    const cacheEntry=leerCacheOrden(gId, consec);
+    const candidatos=[];
+    if(cacheEntry)candidatos.push(cacheEntry.maxOrden);
+    if(maxPendiente!==null)candidatos.push(maxPendiente);
+    if(candidatos.length){
+      const maxFinal=Math.max(...candidatos);
+      document.getElementById('s_inicio').value=maxFinal+1;
+      hint.textContent=`No se pudo verificar en línea — usando datos guardados en este dispositivo. Se sugiere el orden ${maxFinal+1}. Verifica cuando tengas señal.`;
+    }else{
+      hint.textContent='No se pudo verificar el último orden. Revísalo manualmente.';
+    }
+    console.warn('No se pudo verificar orden sugerido:', e.message);
+  }
+}
+
 async function iniciarSesion(){
   const fecha=document.getElementById('s_fecha').value;
   const gId=document.getElementById('s_gid').value;
@@ -765,18 +885,21 @@ async function iniciarSesion(){
   const btn=document.querySelector('#s-sesion .btn-primary');
   const btnHtmlOriginal=btn.innerHTML;
 
-  // Verificar contra SharePoint si este lote ya tiene registros guardados, para evitar duplicarlos.
+  // Verificar contra SharePoint (y contra lo que ya esté pendiente de sincronizar en este equipo)
+  // si este lote ya tiene registros guardados, para evitar duplicarlos.
   // Si no hay conexión o falla la verificación, se deja continuar (no se bloquea la captura en campo).
+  const pendientesLocales=ordenesLocalesPendientes(gId, consec);
   if(navigator.onLine){
     btn.disabled=true;
     btn.innerHTML='Verificando lote existente...';
     try{
-      const ordenesExistentes=await obtenerOrdenesExistentes(gId, consec);
+      const ordenesSP=await obtenerOrdenesExistentes(gId, consec);
+      const ordenesExistentes=[...ordenesSP, ...pendientesLocales];
       if(ordenesExistentes.length>0){
         const maxOrden=Math.max(...ordenesExistentes);
         if(ordenesExistentes.includes(inicio) || inicio<=maxOrden){
           const continuar=confirm(
-            `⚠️ Este lote (${gN}, consecutivo ${consec}) ya tiene ${ordenesExistentes.length} cerdo(s) guardado(s) en SharePoint, hasta el orden ${maxOrden}.\n\n`+
+            `⚠️ Este lote (${gN}, consecutivo ${consec}) ya tiene ${ordenesExistentes.length} cerdo(s) guardado(s) (en SharePoint o pendientes de sincronizar en este equipo), hasta el orden ${maxOrden}.\n\n`+
             `Si continúas desde el orden ${inicio}, vas a DUPLICAR registros que ya existen.\n\n`+
             `Presiona "Aceptar" para continuar automáticamente desde el orden ${maxOrden+1} (recomendado), o "Cancelar" para revisar el consecutivo.`
           );
@@ -794,6 +917,19 @@ async function iniciarSesion(){
     }
     btn.disabled=false;
     btn.innerHTML=btnHtmlOriginal;
+  }else if(pendientesLocales.length>0){
+    // Sin señal: al menos revisamos contra lo que ya está guardado localmente en este equipo
+    const maxLocal=Math.max(...pendientesLocales);
+    if(pendientesLocales.includes(inicio) || inicio<=maxLocal){
+      const continuar=confirm(
+        `⚠️ Sin conexión — pero este equipo ya tiene ${pendientesLocales.length} cerdo(s) de este lote pendientes de sincronizar, hasta el orden ${maxLocal}.\n\n`+
+        `Si continúas desde el orden ${inicio}, vas a DUPLICAR esos registros.\n\n`+
+        `Presiona "Aceptar" para continuar desde el orden ${maxLocal+1} (recomendado), o "Cancelar" para revisar.`
+      );
+      if(!continuar)return;
+      inicio=maxLocal+1;
+      document.getElementById('s_inicio').value=inicio;
+    }
   }
 
   sesion={fecha,gId:parseInt(gId),gN,consec,orden:inicio};
