@@ -852,8 +852,8 @@ function onLob(id,el){
   }else if(val.length===2){
     if(val==='10'){
       // "10" es el único valor de 2 dígitos que podría seguir creciendo (a "100"),
-      // así que esperamos por si el técnico sigue escribiendo el 100%.
-      lobAutoTimer=setTimeout(()=>avanzarSiguienteLob(id),450);
+      // así que esperamos más tiempo por si el técnico sigue escribiendo el 100%.
+      lobAutoTimer=setTimeout(()=>avanzarSiguienteLob(id),1200);
     }else if(val[0]!=='0'){
       // Dos dígitos que no arrancan en 0 y no son "10" (11-99): valor completo, avanzar de inmediato
       avanzarSiguienteLob(id);
