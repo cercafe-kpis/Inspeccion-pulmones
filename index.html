@@ -809,13 +809,17 @@ function focusLob(el){
 /**
  * Handler oninput de cada casilla de lóbulo. Valida y guarda el valor
  * (0-100) en lobVals, y decide si avanza de inmediato a la siguiente
- * casilla o si espera un segundo dígito, según estas reglas:
- *   - 3 dígitos (ej. "100")                → avanza de inmediato (no caben más).
- *   - 2 dígitos que no empiezan en 0 (10-99) → avanza de inmediato (valor completo).
- *   - 2 dígitos que empiezan en 0 (ej. "00") → caso raro, espera 450ms por seguridad.
- *   - 1 solo dígito "0"                     → avanza de inmediato (0% es un valor completo).
- *   - 1 solo dígito 1-9 (ej. "2")           → NO avanza; espera a que llegue el 2do dígito
- *     (que caerá en la regla de "2 dígitos" de arriba y avanzará de inmediato).
+ * casilla o si espera más dígitos, según estas reglas:
+ *   - 3 dígitos (ej. "100")                     → avanza de inmediato (no caben más).
+ *   - 2 dígitos, empiezan en 1 (o sea "10")      → NO avanza todavía; espera 450ms
+ *     por si el técnico sigue escribiendo para completar "100" (100% de consolidación).
+ *     Si no llega un 3er dígito en ese tiempo, se asume que el valor es 10 y avanza.
+ *   - 2 dígitos, empiezan en 2-9 (11-99 salvo 10) → avanza de inmediato (valor completo,
+ *     no puede seguir creciendo dentro del rango 0-100).
+ *   - 2 dígitos que empiezan en 0 (ej. "00")     → caso raro, espera 450ms por seguridad.
+ *   - 1 solo dígito "0"                          → avanza de inmediato (0% es un valor completo).
+ *   - 1 solo dígito 1-9 (ej. "2")                → NO avanza; espera a que llegue el 2do dígito
+ *     (que caerá en alguna de las reglas de "2 dígitos" de arriba).
  * @param {string} id - id del lóbulo (ver LOBULOS), ej. 'apical_derecho'.
  * @param {HTMLInputElement} el - la casilla que disparó el evento.
  */
@@ -846,8 +850,12 @@ function onLob(id,el){
     // Con 3 dígitos ya no caben más (máx 100) -> avanzar de inmediato
     avanzarSiguienteLob(id);
   }else if(val.length===2){
-    if(val[0]!=='0'){
-      // Dos dígitos que no arrancan en 0 (10-99): valor completo, avanzar de inmediato
+    if(val==='10'){
+      // "10" es el único valor de 2 dígitos que podría seguir creciendo (a "100"),
+      // así que esperamos por si el técnico sigue escribiendo el 100%.
+      lobAutoTimer=setTimeout(()=>avanzarSiguienteLob(id),450);
+    }else if(val[0]!=='0'){
+      // Dos dígitos que no arrancan en 0 y no son "10" (11-99): valor completo, avanzar de inmediato
       avanzarSiguienteLob(id);
     }else{
       // Caso raro (ej. "00"): esperamos por seguridad
@@ -859,7 +867,7 @@ function onLob(id,el){
       avanzarSiguienteLob(id);
     }else{
       // Un solo dígito 1-9: no avanzamos todavía, esperamos a que escriba el segundo dígito.
-      // En cuanto lo escriba, cae en la rama de "dos dígitos" de arriba y avanza de inmediato.
+      // En cuanto lo escriba, cae en alguna de las reglas de "2 dígitos" de arriba.
     }
   }
 }
