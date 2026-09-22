@@ -476,21 +476,55 @@ let msalApp,spSiteId='',spListId='';
  * éxito, muestra la app (showApp). Se llama desde el botón de login.
  * Requiere que CONFIG.CLIENT_ID / CONFIG.TENANT_ID estén bien configurados.
  */
+/**
+ * Crea (una sola vez) la instancia de MSAL usada tanto para el login
+ * manual como para el intento de restaurar sesión al abrir la app.
+ * IMPORTANTE: cacheLocation es 'localStorage' (no 'sessionStorage')
+ * para que la sesión de Microsoft sobreviva un cierre completo de la
+ * app/PWA (no solo pasar a segundo plano). Con 'sessionStorage', un
+ * cierre real borraba la sesión y obligaba a reloguear justo cuando
+ * más se necesita el token (para poder verificar duplicados al
+ * reabrir a mitad de un lote).
+ */
+function crearMsalApp(){
+  if(msalApp)return msalApp;
+  msalApp=new msal.PublicClientApplication({
+    auth:{
+      clientId:CONFIG.CLIENT_ID,
+      authority:`https://login.microsoftonline.com/${CONFIG.TENANT_ID}`,
+      redirectUri:location.origin+location.pathname
+    },
+    cache:{cacheLocation:'localStorage'}
+  });
+  return msalApp;
+}
+
 async function doLogin(){
   try{
-
-    msalApp=new msal.PublicClientApplication({
-      auth:{
-        clientId:CONFIG.CLIENT_ID,
-        authority:`https://login.microsoftonline.com/${CONFIG.TENANT_ID}`,
-        redirectUri:location.origin+location.pathname
-      },
-      cache:{cacheLocation:'sessionStorage'}
-    });
+    crearMsalApp();
     await msalApp.initialize();
     const r=await msalApp.loginPopup({scopes:['User.Read','Sites.ReadWrite.All']});
     showApp(r.account);
   }catch(e){showToast('Error: '+e.message,'err');}
+}
+
+/**
+ * Se ejecuta al cargar la página: intenta restaurar una sesión de
+ * Microsoft ya existente (guardada en localStorage) SIN pedirle al
+ * técnico que vuelva a loguearse. Así, si la app se cierra/crashea a
+ * mitad de una captura, reabrirla no pierde el contexto de
+ * autenticación — que es justo lo que hace falta para poder verificar
+ * duplicados contra SharePoint al reanudar.
+ */
+async function intentarRestaurarSesion(){
+  try{
+    crearMsalApp();
+    await msalApp.initialize();
+    const cuentas=msalApp.getAllAccounts();
+    if(cuentas.length>0)showApp(cuentas[0]);
+  }catch(e){
+    console.warn('No se pudo restaurar sesión automáticamente:', e.message);
+  }
 }
 
 /**
@@ -539,6 +573,10 @@ function showApp(acc){
   document.getElementById('av').textContent=name.split(' ').slice(0,2).map(p=>p[0]).join('').toUpperCase();
   document.getElementById('s_fecha').value=new Date().toISOString().split('T')[0];
 
+  // Si había una captura sin terminar (la app se cerró a mitad de un lote),
+  // ofrecer reanudarla en vez de depender de que el técnico vuelva a escribir
+  // la granja/consecutivo y de que la verificación de red funcione bien.
+  revisarSesionPendiente();
 }
 
 /**
@@ -947,6 +985,8 @@ function showScreen(id){
  * vacíos para el siguiente lote (ver showScreen).
  */
 function irSesion(){
+  // El técnico da por terminado este lote: ya no hace falta poder reanudarlo.
+  borrarSesionActiva();
   // Limpiar granja, consecutivo y orden al volver, para no tener que borrar
   // manualmente los datos del lote anterior antes de elegir el siguiente.
   document.getElementById('s_gsearch').value='';
@@ -1048,6 +1088,80 @@ function leerCacheOrden(gId, consec){
   return leerCacheOrdenes()[`${gId}|${consec}`]||null;
 }
 
+/* ══ REANUDAR CAPTURA SIN TERMINAR ══
+   Además de la verificación contra SharePoint (que depende de tener
+   señal y token válido), guardamos la sesión de captura activa
+   (granja, consecutivo, orden) en localStorage en cada animal
+   guardado. Así, si la app se cierra/crashea a mitad de un lote, al
+   reabrirla se puede ofrecer "continuar donde ibas" sin re-teclear
+   nada y sin depender de que la consulta de red funcione — que es
+   justo lo que falló en el incidente de Buenos Aires GAM / 12614. */
+const SESION_ACTIVA_KEY='insp_pulmones_sesion_activa';
+
+/** Guarda la sesión de captura activa (para poder reanudarla si la app se cierra). */
+function guardarSesionActiva(){
+  try{localStorage.setItem(SESION_ACTIVA_KEY, JSON.stringify(sesion));}catch{}
+}
+/** Lee la sesión de captura sin terminar, o null si no hay ninguna guardada. */
+function leerSesionActiva(){
+  try{
+    const raw=localStorage.getItem(SESION_ACTIVA_KEY);
+    if(!raw)return null;
+    const s=JSON.parse(raw);
+    if(!s||!s.gId||!s.consec||!s.orden)return null;
+    return s;
+  }catch{return null;}
+}
+/** Borra la sesión activa guardada (al terminar un lote o al descartarla). */
+function borrarSesionActiva(){
+  try{localStorage.removeItem(SESION_ACTIVA_KEY);}catch{}
+}
+
+/**
+ * Se llama al mostrar la app (login manual o restaurado). Si hay una
+ * captura sin terminar guardada en este dispositivo, le pregunta al
+ * técnico si quiere continuarla; si acepta, reintenta una verificación
+ * rápida contra SharePoint por si otro dispositivo avanzó ese mismo
+ * lote mientras tanto, y salta directo a la pantalla de captura.
+ */
+async function revisarSesionPendiente(){
+  const s=leerSesionActiva();
+  if(!s)return;
+  const continuar=confirm(
+    `Tienes una captura sin terminar:\n\n`+
+    `Granja: ${s.gN}\nConsecutivo: ${s.consec}\nÚltimo pulmón guardado: ${s.orden-1}\n\n`+
+    `Presiona "Aceptar" para continuar en el pulmón ${s.orden}, o "Cancelar" para descartarla y empezar un lote nuevo.`
+  );
+  if(!continuar){borrarSesionActiva();return;}
+
+  sesion={...s};
+  registrados=0;
+
+  if(navigator.onLine){
+    try{
+      const ordenesSP=await obtenerOrdenesExistentes(sesion.gId, sesion.consec);
+      const pendientesLocales=ordenesLocalesPendientes(sesion.gId, sesion.consec);
+      const todos=[...ordenesSP,...pendientesLocales];
+      if(todos.length){
+        const maxOrden=Math.max(...todos);
+        if(maxOrden>=sesion.orden){
+          sesion.orden=maxOrden+1;
+          showToast('Se ajustó el orden a '+sesion.orden+' según SharePoint','ok');
+        }
+      }
+    }catch(e){
+      console.warn('No se pudo reverificar el lote al reanudar:', e.message);
+    }
+  }
+
+  guardarSesionActiva();
+  document.getElementById('c-granja').textContent=sesion.gN;
+  document.getElementById('c-consec').textContent='#'+sesion.consec;
+  document.getElementById('c-fecha').textContent=sesion.fecha;
+  resetAnimal();
+  showScreen('s-captura');
+}
+
 let ordenCheckTimer=null;
 let ordenCheckToken=0; // evita que una respuesta vieja pise una consulta más reciente
 
@@ -1071,6 +1185,9 @@ function onConsecInput(){
 async function actualizarOrdenSugerido(){
   if(ordenCheckTimer){clearTimeout(ordenCheckTimer);ordenCheckTimer=null;}
   const hint=document.getElementById('s_inicio_hint');
+  // Limpiar cualquier estilo de advertencia de una verificación fallida anterior.
+  hint.style.color='';
+  hint.style.fontWeight='';
   const gId=document.getElementById('s_gid').value;
   const consec=document.getElementById('s_consec').value.trim();
 
@@ -1143,12 +1260,14 @@ async function actualizarOrdenSugerido(){
     const candidatos=[];
     if(cacheEntry)candidatos.push(cacheEntry.maxOrden);
     if(maxPendiente!==null)candidatos.push(maxPendiente);
+    hint.style.color='var(--red)';
+    hint.style.fontWeight='700';
     if(candidatos.length){
       const maxFinal=Math.max(...candidatos);
       document.getElementById('s_inicio').value=maxFinal+1;
-      hint.textContent=`No se pudo verificar en línea (${e.message}) — usando datos guardados en este dispositivo. Se sugiere el orden ${maxFinal+1}. Verifica cuando tengas señal.`;
+      hint.textContent=`⚠️ No se pudo verificar en línea (${e.message}) — usando datos guardados en este dispositivo. Se sugiere el orden ${maxFinal+1}, pero VERIFICA antes de continuar.`;
     }else{
-      hint.textContent=`No se pudo verificar el último orden (${e.message}). Revísalo manualmente.`;
+      hint.textContent=`⚠️ No se pudo verificar el último orden (${e.message}). Revísalo manualmente antes de continuar — este lote podría ya tener registros.`;
     }
     console.warn('No se pudo verificar orden sugerido:', e.message);
   }
@@ -1178,13 +1297,25 @@ async function iniciarSesion(){
 
   // Verificar contra SharePoint (y contra lo que ya esté pendiente de sincronizar en este equipo)
   // si este lote ya tiene registros guardados, para evitar duplicarlos.
-  // Si no hay conexión o falla la verificación, se deja continuar (no se bloquea la captura en campo).
+  // Si la verificación en línea falla, YA NO se deja pasar en silencio (eso causó el
+  // incidente de duplicados del 22/09): se avisa siempre con un confirm() explícito,
+  // usando cola local + caché como respaldo cuando existan.
   const pendientesLocales=ordenesLocalesPendientes(gId, consec);
   if(navigator.onLine){
     btn.disabled=true;
     btn.innerHTML='Verificando lote existente...';
+    let ordenesSP=null, fallo=null;
     try{
-      const ordenesSP=await obtenerOrdenesExistentes(gId, consec);
+      ordenesSP=await obtenerOrdenesExistentes(gId, consec);
+    }catch(e){
+      fallo=e;
+      console.warn('No se pudo verificar duplicados antes de iniciar:', e.message);
+    }
+    btn.disabled=false;
+    btn.innerHTML=btnHtmlOriginal;
+
+    if(ordenesSP!==null){
+      // Verificación contra SharePoint exitosa: comparar normalmente.
       const ordenesExistentes=[...ordenesSP, ...pendientesLocales];
       if(ordenesExistentes.length>0){
         const maxOrden=Math.max(...ordenesExistentes);
@@ -1194,20 +1325,39 @@ async function iniciarSesion(){
             `Si continúas desde el orden ${inicio}, vas a DUPLICAR registros que ya existen.\n\n`+
             `Presiona "Aceptar" para continuar automáticamente desde el orden ${maxOrden+1} (recomendado), o "Cancelar" para revisar el consecutivo.`
           );
-          if(!continuar){
-            btn.disabled=false;
-            btn.innerHTML=btnHtmlOriginal;
-            return;
-          }
+          if(!continuar)return;
           inicio=maxOrden+1;
           document.getElementById('s_inicio').value=inicio;
         }
       }
-    }catch(e){
-      console.warn('No se pudo verificar duplicados antes de iniciar:', e.message);
+    }else{
+      // No se pudo verificar contra SharePoint (token, red, filtro no indexado, etc.) —
+      // en vez de dejar pasar en silencio (que fue la causa del incidente de duplicados
+      // del 22/09), avisamos SIEMPRE con algo que el técnico no pueda pasar por alto,
+      // usando lo que sí tengamos localmente (cola pendiente + caché) como respaldo.
+      const cacheEntry=leerCacheOrden(gId, consec);
+      const candidatosLocales=[...pendientesLocales];
+      if(cacheEntry)candidatosLocales.push(cacheEntry.maxOrden);
+
+      if(candidatosLocales.length>0){
+        const maxLocal=Math.max(...candidatosLocales);
+        const continuar=confirm(
+          `⚠️ No se pudo verificar en SharePoint si este lote ya existe (${fallo.message}), pero según datos guardados en este equipo, el lote (${gN}, consecutivo ${consec}) ya llegó hasta el orden ${maxLocal}.\n\n`+
+          `Si continúas desde el orden ${inicio}, es muy probable que DUPLIQUES cerdos.\n\n`+
+          `Presiona "Aceptar" para continuar desde el orden ${maxLocal+1} (recomendado), o "Cancelar" para revisar tu conexión primero.`
+        );
+        if(!continuar)return;
+        inicio=maxLocal+1;
+        document.getElementById('s_inicio').value=inicio;
+      }else{
+        const continuar=confirm(
+          `⚠️ No se pudo verificar en SharePoint si el lote (${gN}, consecutivo ${consec}) ya tiene registros guardados (${fallo.message}).\n\n`+
+          `Si este lote ya se capturó antes (por ejemplo, la app se cerró a mitad de camino) y continúas desde el orden ${inicio}, vas a DUPLICAR cerdos que ya existen.\n\n`+
+          `Presiona "Cancelar" y revisa tu conexión antes de continuar, o "Aceptar" SOLO si estás seguro de que este es un lote nuevo o de que el orden ${inicio} es correcto.`
+        );
+        if(!continuar)return;
+      }
     }
-    btn.disabled=false;
-    btn.innerHTML=btnHtmlOriginal;
   }else if(pendientesLocales.length>0){
     // Sin señal: al menos revisamos contra lo que ya está guardado localmente en este equipo
     const maxLocal=Math.max(...pendientesLocales);
@@ -1225,6 +1375,7 @@ async function iniciarSesion(){
 
   sesion={fecha,gId:parseInt(gId),gN,consec,orden:inicio};
   registrados=0;
+  guardarSesionActiva(); // para poder reanudar si la app se cierra a mitad del lote
 
   document.getElementById('c-granja').textContent=gN;
   document.getElementById('c-consec').textContent='#'+consec;
@@ -1349,6 +1500,7 @@ async function guardarYSiguiente(){
       agregarACola(fields);
       registrados++;
       sesion.orden++;
+      guardarSesionActiva();
       resetAnimal();
       showToast('📥 Sin señal — guardado localmente (#'+(sesion.orden-1)+')','ok');
     } else {
@@ -1357,6 +1509,7 @@ async function guardarYSiguiente(){
         await guardarSP(fields);
         registrados++;
         sesion.orden++;
+        guardarSesionActiva();
         resetAnimal();
         showToast('✓ Guardado en SharePoint — animal #'+(sesion.orden-1),'ok');
       }catch(e){
@@ -1365,6 +1518,7 @@ async function guardarYSiguiente(){
           agregarACola(fields);
           registrados++;
           sesion.orden++;
+          guardarSesionActiva();
           resetAnimal();
           showToast('📥 Error de red — guardado localmente (#'+(sesion.orden-1)+')','ok');
         } else {
@@ -1409,7 +1563,7 @@ function showToast(msg,tipo){
 window.addEventListener('DOMContentLoaded',()=>{
   buildLobulos();
   buildHallazgos();
-
+  intentarRestaurarSesion();
 });
 </script>
 
