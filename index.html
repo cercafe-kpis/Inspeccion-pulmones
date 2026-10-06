@@ -284,6 +284,7 @@ const CONFIG={
     <h2>Inspección pulmonar</h2>
     <p>Inicie sesión con su cuenta Microsoft para registrar inspecciones en SharePoint.</p>
     <div class="login-pend" id="login-pend"></div>
+    <p class="ver-info" style="font-size:11px;color:#888;margin-top:12px;text-align:center;"></p>
     <button class="btn-ms" onclick="doLogin()">
       <svg width="18" height="18" viewBox="0 0 21 21">
         <rect x="1" y="1" width="9" height="9" fill="#f25022"/>
@@ -415,6 +416,7 @@ const CONFIG={
 
 <footer style="text-align:center;padding:1.25rem 1rem calc(1.25rem + env(safe-area-inset-bottom));background:var(--card);border-top:1px solid var(--borderl);margin-top:auto;">
   <p style="font-size:11px;color:var(--hint);letter-spacing:.03em;">Desarrollado por <strong style="color:var(--muted);font-weight:600;">Gestión Técnica Especializada</strong></p>
+  <p class="ver-info" style="font-size:11px;color:var(--hint);margin-top:6px;"></p>
 </footer>
 
 <!-- ══ DATOS ══ -->
@@ -798,11 +800,21 @@ function marcarFalloEnCola(id,e){
   }));
 }
 
+const APP_VERSION='2026-10-06-b'; // súbalo en cada cambio: se ve en el pie de la app para confirmar que el celular ya tiene la versión nueva
+
+/** Pie de página: versión de la app, pendientes en este celular y estado de conexión. */
+function pintarVersion(){
+  const n=leerCola().length;
+  const txt=`Versión ${APP_VERSION} · ${n} pendiente${n===1?'':'s'} en este celular · ${navigator.onLine?'con conexión':'sin conexión'}`;
+  document.querySelectorAll('.ver-info').forEach(e=>{e.textContent=txt;});
+}
+
 let _necesitaLogin=false; // true cuando la sesión de Microsoft venció y hace falta que el técnico toque para iniciar sesión
 let _avisoAuthMostrado=false;
 
 /** Pinta la barra azul/ámbar y el contador de la pantalla de captura según lo que haya en la cola. */
 function actualizarSyncBar(){
+  pintarVersion();
   if(_sincronizando)return; // durante la sincronización se muestra el progreso
   const n=leerCola().length;
   const syncBar=document.getElementById('sync-bar');
@@ -938,6 +950,7 @@ function autoSincronizar(){
 
 /* Detectar cambios de conexión */
 window.addEventListener('online',()=>{
+  pintarVersion();
   document.getElementById('offline-bar').classList.remove('on');
   if(leerCola().length>0){
     _necesitaLogin=false; // volvió la red: reintentar aunque antes hubiera fallado
@@ -946,6 +959,7 @@ window.addEventListener('online',()=>{
   }
 });
 window.addEventListener('offline',()=>{
+  pintarVersion();
   document.getElementById('offline-bar').classList.add('on');
 });
 /* Al volver a abrir/mostrar la app: refrescar pendientes y reintentar */
@@ -1792,6 +1806,7 @@ function showToast(msg,tipo,ms){
 window.addEventListener('DOMContentLoaded',()=>{
   buildLobulos();
   buildHallazgos();
+  pintarVersion();
   mostrarPendientesLogin();
   intentarRestaurarSesion();
 });
