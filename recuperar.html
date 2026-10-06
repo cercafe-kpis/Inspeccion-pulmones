@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Recuperar pendientes — Inspección pulmonar</title>
+<style>
+:root{--g:#1f5c3a;--gl:#e6f2ea;--t:#1c1c1c;--m:#666;--b:#d9d9d9;--w:#c07a20;--r:#b3261e;}
+*{box-sizing:border-box}
+body{margin:0;font-family:system-ui,-apple-system,Roboto,Arial,sans-serif;background:#f4f2ee;color:var(--t);font-size:15px;line-height:1.4}
+header{background:var(--g);color:#fff;padding:14px 16px}
+header h1{margin:0;font-size:17px}
+header p{margin:4px 0 0;font-size:12px;opacity:.85}
+main{padding:14px 16px 40px;max-width:760px;margin:0 auto}
+.card{background:#fff;border:1px solid var(--b);border-radius:10px;padding:12px 14px;margin-bottom:12px}
+.card h2{margin:0 0 8px;font-size:14px;text-transform:uppercase;letter-spacing:.04em;color:var(--m)}
+.big{font-size:22px;font-weight:700}
+.ok{color:var(--g)} .warn{color:var(--w)} .err{color:var(--r)}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th,td{text-align:left;padding:5px 6px;border-bottom:1px solid #eee;vertical-align:top}
+th{color:var(--m);font-weight:600}
+button{background:var(--g);color:#fff;border:none;border-radius:8px;padding:11px 14px;font-size:14px;font-weight:600;margin:4px 6px 4px 0;cursor:pointer}
+button.sec{background:#fff;color:var(--g);border:1px solid var(--g)}
+button:disabled{opacity:.4}
+.small{font-size:12px;color:var(--m)}
+pre{background:#f7f7f7;border:1px solid #eee;border-radius:6px;padding:8px;font-size:11px;overflow:auto;max-height:220px;white-space:pre-wrap;word-break:break-all}
+</style>
+</head>
+<body>
+<header>
+  <h1>Recuperar pendientes de este celular</h1>
+  <p>Solo LEE lo que la app guardó en este navegador. No borra ni modifica nada, y no envía datos a ningún lado.</p>
+</header>
+<main>
+  <div class="card" id="c-estado"><h2>Estado</h2><div id="estado">Revisando…</div></div>
+  <div class="card" id="c-lotes" style="display:none"><h2>Pendientes por lote</h2><div id="lotes"></div>
+    <div style="margin-top:8px">
+      <button id="b-csv" onclick="bajar('csv')">Descargar CSV (Excel)</button>
+      <button id="b-json" class="sec" onclick="bajar('json')">Descargar JSON</button>
+      <button id="b-copy" class="sec" onclick="copiar()">Copiar JSON</button>
+    </div>
+    <p class="small">Guarde el archivo descargado: es una copia de seguridad de lo que hay en el celular. Luego abra la app con Wi-Fi para que lo suba sola.</p>
+  </div>
+  <div class="card"><h2>Todo lo que este sitio guardó en el navegador</h2><div id="claves"></div></div>
+  <div class="card"><h2>Memoria usada por este sitio</h2><div id="mem">Calculando…</div></div>
+  <div class="card"><h2>Dónde estoy</h2><div class="small" id="origen"></div></div>
+</main>
+<script>
+const QUEUE_KEY='insp_pulmones_queue';
+let cola=[];
+
+function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
+function kb(n){return n>=1048576?(n/1048576).toFixed(1)+' MB':(n/1024).toFixed(1)+' KB';}
+
+function leer(){
+  let raw=null;
+  try{raw=localStorage.getItem(QUEUE_KEY);}catch(e){
+    document.getElementById('estado').innerHTML='<span class="err">No se pudo leer el almacenamiento del navegador: '+esc(e.message)+'</span>';
+    return;
+  }
+  if(raw===null){
+    document.getElementById('estado').innerHTML='<div class="big warn">No existe la cola de pendientes</div><p class="small">Este navegador no tiene la clave <b>'+QUEUE_KEY+'</b>. Eso pasa si nunca se guardó nada sin conexión desde este navegador, o si los datos del sitio se borraron. Revise que esté abriendo esta página con el mismo navegador y la misma dirección (misma carpeta) de la app.</p>';
+  }else{
+    try{cola=JSON.parse(raw);}catch(e){
+      document.getElementById('estado').innerHTML='<div class="big err">La cola existe pero está dañada</div><p class="small">No se pudo interpretar. Copie el texto crudo de abajo y envíelo.</p><pre>'+esc(raw.slice(0,5000))+'</pre>';
+      return;
+    }
+    if(!Array.isArray(cola))cola=[];
+    if(cola.length===0){
+      document.getElementById('estado').innerHTML='<div class="big warn">La cola está vacía (0 registros)</div><p class="small">La clave existe pero no tiene registros: todo lo que había se subió o se quitó.</p>';
+    }else{
+      document.getElementById('estado').innerHTML='<div class="big ok">'+cola.length+' registro'+(cola.length>1?'s':'')+' pendiente'+(cola.length>1?'s':'')+' en este celular</div><p class="small">Siguen guardados y NO se han subido a SharePoint.</p>';
+      pintarLotes();
+    }
+  }
+  pintarClaves();
+}
+
+function pintarLotes(){
+  const g={};
+  cola.forEach(it=>{
+    const f=it.fields||{};
+    const k=(f.granja_nombre||f.granja_id||'?')+' | '+(f.consecutivo||'?');
+    (g[k]=g[k]||{n:0,min:1e9,max:-1,fechas:new Set(),dud:0,err:{}});
+    const x=g[k];x.n++;
+    const o=parseInt(f.orden)||0;x.min=Math.min(x.min,o);x.max=Math.max(x.max,o);
+    if(f.fecha_inspeccion)x.fechas.add(String(f.fecha_inspeccion).split('T')[0]);
+    if(it.dudoso)x.dud++;
+    if(it.ultimoError)x.err[it.ultimoError]=1;
+  });
+  let h='<table><tr><th>Granja | Consecutivo</th><th>Registros</th><th>Orden</th><th>Fecha insp.</th></tr>';
+  Object.keys(g).sort().forEach(k=>{
+    const x=g[k];
+    h+='<tr><td>'+esc(k)+'</td><td><b>'+x.n+'</b></td><td>'+x.min+'–'+x.max+'</td><td>'+esc([...x.fechas].join(', '))+'</td></tr>';
+    const e=Object.keys(x.err);
+    if(e.length)h+='<tr><td colspan="4" class="small warn">Último error: '+esc(e.join(' / '))+'</td></tr>';
+  });
+  h+='</table>';
+  document.getElementById('lotes').innerHTML=h;
+  document.getElementById('c-lotes').style.display='block';
+}
+
+function pintarClaves(){
+  let h='<table><tr><th>Clave</th><th>Tamaño</th></tr>';
+  let n=0;
+  try{
+    for(let i=0;i<localStorage.length;i++){
+      const k=localStorage.key(i);const v=localStorage.getItem(k)||'';
+      // las claves de sesión de Microsoft (msal.*) contienen tokens: solo se muestra el nombre corto y el tamaño
+      const nombre=/^msal\.|login\.windows|login\.microsoftonline/i.test(k)?k.slice(0,40)+'… (sesión Microsoft)':k;
+      h+='<tr><td>'+esc(nombre)+'</td><td>'+kb(v.length*2)+'</td></tr>';n++;
+    }
+  }catch(e){}
+  h+='</table>';
+  document.getElementById('claves').innerHTML=n?h:'<span class="small">No hay nada guardado por este sitio.</span>';
+}
+
+function nombreArchivo(ext){
+  const d=new Date();const p=x=>String(x).padStart(2,'0');
+  return 'pendientes_pulmones_'+d.getFullYear()+p(d.getMonth()+1)+p(d.getDate())+'_'+p(d.getHours())+p(d.getMinutes())+'.'+ext;
+}
+function descargar(texto,nombre,tipo){
+  const blob=new Blob([texto],{type:tipo});
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=nombre;
+  document.body.appendChild(a);a.click();a.remove();
+  setTimeout(()=>URL.revokeObjectURL(a.href),4000);
+}
+function bajar(tipo){
+  if(!cola.length)return;
+  if(tipo==='json'){descargar(JSON.stringify(cola,null,1),nombreArchivo('json'),'application/json');return;}
+  const cols=[];
+  cola.forEach(it=>Object.keys(it.fields||{}).forEach(k=>{if(!cols.includes(k))cols.push(k);}));
+  const celda=v=>{if(v===null||v===undefined)return '';const s=String(v);return /[",;\n\r]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s;};
+  const filas=[cols.join(',')].concat(cola.map(it=>cols.map(c=>celda((it.fields||{})[c])).join(',')));
+  descargar('﻿'+filas.join('\r\n'),nombreArchivo('csv'),'text/csv;charset=utf-8');
+}
+async function copiar(){
+  const t=JSON.stringify(cola);
+  try{await navigator.clipboard.writeText(t);alert('Copiado: '+cola.length+' registros');}
+  catch(e){
+    const ta=document.createElement('textarea');ta.value=t;document.body.appendChild(ta);ta.select();
+    try{document.execCommand('copy');alert('Copiado: '+cola.length+' registros');}catch(_){alert('No se pudo copiar; use "Descargar JSON".');}
+    ta.remove();
+  }
+}
+
+async function memoria(){
+  const el=document.getElementById('mem');
+  try{
+    const e=await navigator.storage.estimate();
+    el.innerHTML='Usado: <b>'+kb(e.usage||0)+'</b> de '+kb(e.quota||0)+'<p class="small">Si usa casi 0 KB, el navegador ya no tiene datos de este sitio.</p>';
+  }catch(e){el.textContent='Este navegador no informa la memoria usada.';}
+}
+
+document.getElementById('origen').textContent='Dirección: '+location.href+'  ·  Origen de datos: '+location.origin;
+leer();memoria();
+</script>
+</body>
+</html>
