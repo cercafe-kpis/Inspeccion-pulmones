@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Listas SharePoint — Inspección Pulmonar</title>
+<style>
+:root{--wine:#6b1a2a;--soft:#f6eaed;--ink:#1c1416;--ink2:#56474b;--line:#e2d6d9;--bg:#fbf8f9;--warn:#fff4d6;--warnb:#e9c46a}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.55 system-ui,-apple-system,"Segoe UI",sans-serif}
+.wrap{max-width:900px;margin:0 auto;padding:32px 20px 64px}
+header{border-bottom:3px solid var(--wine);padding-bottom:14px;margin-bottom:24px}
+h1{font-size:26px;margin:0 0 4px;color:var(--wine)}
+h2{font-size:19px;margin:36px 0 8px;color:var(--wine)}
+h3{font-size:15px;margin:20px 0 6px}
+p,li{color:var(--ink2)} b,strong{color:var(--ink)}
+code{background:var(--soft);padding:1px 6px;border-radius:4px;font-size:13.5px;color:var(--ink)}
+table{width:100%;border-collapse:collapse;margin:8px 0 6px;background:#fff;font-size:14px}
+th{background:var(--wine);color:#fff;text-align:left;padding:7px 10px;font-weight:600}
+td{border-bottom:1px solid var(--line);padding:7px 10px;vertical-align:top}
+.scroll{overflow-x:auto}
+.note{background:var(--warn);border-left:4px solid var(--warnb);padding:10px 14px;border-radius:6px;margin:14px 0}
+.ok{background:var(--soft);border-left:4px solid var(--wine);padding:10px 14px;border-radius:6px;margin:14px 0}
+ol li,ul li{margin:4px 0}
+.check li{list-style:none;margin-left:-20px}
+.check li::before{content:"☐ ";color:var(--wine)}
+@media print{body{background:#fff}.wrap{padding:0}h2{break-after:avoid}table{break-inside:avoid}}
+</style>
+</head>
+<body>
+<div class="wrap">
+<header>
+  <h1>Listas de SharePoint — Inspección Pulmonar</h1>
+  <div>Sitio: <code>https://cercafe.sharepoint.com/sites/Inspeccion_pulmones</code> · Versión 19-oct-2026</div>
+</header>
+
+<p>La app de captura y el dashboard dejan de tener las granjas, los asociados y los usuarios escritos en el código. Esa información pasa a <b>3 listas nuevas</b> en el mismo sitio donde ya está <code>InspeccionPulmones</code>. Esta guía dice exactamente cómo crearlas.</p>
+
+<div class="note"><b>Regla de oro de los nombres.</b> Escriba cada nombre de columna <b>exactamente igual</b> al de la guía al crearla: sin tildes, sin espacios, respetando mayúsculas. Ese primer nombre se convierte en el <i>nombre interno</i> que usa la app, y no se puede cambiar después (si luego la renombra, solo cambia lo que se ve en pantalla). Todos los nombres de esta guía tienen menos de 30 caracteres, porque SharePoint corta los nombres internos a 32.</div>
+
+<h2>Cómo crear una lista y sus columnas</h2>
+<ol>
+  <li>En el sitio, <b>+ Nuevo → Lista → Lista en blanco</b>. Escriba el nombre de la lista tal cual (por ejemplo <code>Granjas</code>).</li>
+  <li>La columna <code>Title</code> ya viene creada (en pantalla dice "Título"). <b>No cree otra</b>: se usa como primera columna de cada lista. Puede cambiarle el nombre que se ve (por ejemplo a "Código"); el nombre interno sigue siendo <code>Title</code>.</li>
+  <li>Para cada columna de la tabla: <b>+ Agregar columna</b> → elija el tipo → escriba el nombre exacto → <b>Guardar</b>.</li>
+  <li>Para confirmar el nombre interno: <b>⚙ → Configuración de la lista</b> → clic en la columna → en la barra de direcciones, el valor después de <code>Field=</code> es el nombre interno.</li>
+</ol>
+
+<h2>1. Lista <code>Asociados</code></h2>
+<p>Un registro por asociado. El <b>código</b> (Title) es el mismo texto que hoy usa el dashboard, así los datos históricos siguen cuadrando.</p>
+<div class="scroll"><table>
+<tr><th>Columna</th><th>Tipo</th><th>Para qué sirve</th><th>Ejemplo</th></tr>
+<tr><td><code>Title</code></td><td>(viene por defecto)</td><td>Código del asociado</td><td>CERDOS DEL OTUN</td></tr>
+<tr><td><code>Nombre</code></td><td>Una línea de texto</td><td>Nombre para mostrar</td><td>Cerdos del Otún</td></tr>
+<tr><td><code>ParametroSite</code></td><td>Una línea de texto</td><td>Valor de <code>?site=</code> en la URL incrustada en su Tu.HUB (vacío si no tiene)</td><td>CDO</td></tr>
+<tr><td><code>SitioTuHub</code></td><td>Una línea de texto</td><td>Dirección de su sitio Tu.HUB (botón "Abrir Tu.HUB")</td><td>https://cercafe.sharepoint.com/sites/TU.HUBCerdosdelOtn</td></tr>
+<tr><td><code>Activo</code></td><td>Sí/No (predeterminado Sí)</td><td>Ocultar un asociado sin borrarlo</td><td>Sí</td></tr>
+</table></div>
+
+<h2>2. Lista <code>Granjas</code></h2>
+<p>Una fila por granja. <code>Title</code> es el nombre interno, el mismo que se guarda en <code>granja_nombre</code> de cada inspección: <b>no lo cambie en granjas que ya tienen datos</b>, porque las inspecciones viejas dejarían de asociarse a la granja.</p>
+<div class="scroll"><table>
+<tr><th>Columna</th><th>Tipo</th><th>Para qué sirve</th><th>Ejemplo</th></tr>
+<tr><td><code>Title</code></td><td>(viene por defecto)</td><td>Nombre interno (mayúsculas)</td><td>LA MARAVILLA</td></tr>
+<tr><td><code>IdGranja</code></td><td>Número, 0 decimales</td><td>Id numérico que se guarda en <code>granja_id</code></td><td>39</td></tr>
+<tr><td><code>NombreVista</code></td><td>Una línea de texto</td><td>Nombre que ven técnicos y asociados</td><td>La Maravilla</td></tr>
+<tr><td><code>Asociado</code></td><td>Una línea de texto</td><td>Código del asociado (igual al <code>Title</code> de Asociados)</td><td>GAM</td></tr>
+<tr><td><code>Activa</code></td><td>Sí/No (predeterminado Sí)</td><td>Las inactivas no aparecen para capturar, pero sus datos se siguen viendo</td><td>Sí</td></tr>
+</table></div>
+<div class="ok"><b>¿Por qué <code>Asociado</code> es texto y no una columna de búsqueda?</b> Porque así se puede pegar directamente desde Excel y el celular la guarda sin conexión sin pasos extra. La pantalla de administración de la app solo deja elegir códigos que existan en <code>Asociados</code>, así que no se pueden escribir mal.</div>
+
+<h2>3. Lista <code>Usuarios</code></h2>
+<p>Quién puede entrar y qué ve. <b>Una cuenta que no esté aquí no podrá usar la app ni el dashboard</b> después del cambio.</p>
+<div class="scroll"><table>
+<tr><th>Columna</th><th>Tipo</th><th>Para qué sirve</th><th>Ejemplo</th></tr>
+<tr><td><code>Title</code></td><td>(viene por defecto)</td><td>Nombre de la persona</td><td>Juan Pérez</td></tr>
+<tr><td><code>Correo</code></td><td>Una línea de texto</td><td>Correo con el que inicia sesión</td><td>juan.perez@dominio.com</td></tr>
+<tr><td><code>Rol</code></td><td>Elección, opciones exactas: <code>Administrador</code>, <code>Tecnico</code>, <code>Asociado</code></td><td>Administrador: todo + configuración. Tecnico: captura. Asociado: dashboard de sus granjas.</td><td>Asociado</td></tr>
+<tr><td><code>Asociados</code></td><td>Una línea de texto</td><td>Códigos que puede ver, separados por <code>;</code>. Vacío para Administrador.</td><td>CERDOS DEL OTUN;LM</td></tr>
+<tr><td><code>Activo</code></td><td>Sí/No (predeterminado Sí)</td><td>Quitar el acceso sin borrar el registro</td><td>Sí</td></tr>
+</table></div>
+<p>Milonga y Renacer (grupo <code>LM</code>) se ven en Cerdos del Otún porque a sus usuarios se les asignan los dos códigos.</p>
+
+<h2>4. Cambios en <code>InspeccionPulmones</code> (la lista que ya existe)</h2>
+<p>Ninguna columna existente cambia. Solo:</p>
+<ol>
+  <li><b>Columna nueva</b> <code>IdLocal</code> — Una línea de texto. Identificador único que pone el celular a cada cerdo; evita duplicados al sincronizar. Los registros viejos quedan vacíos y no pasa nada.</li>
+  <li><b>Índices</b>: <b>⚙ → Configuración de la lista → Columnas indizadas → Crear un nuevo índice</b>, uno para cada columna: <code>IdLocal</code>, <code>granja_id</code>, <code>consecutivo</code>. Las búsquedas de "orden sugerido" y de duplicados quedan rápidas y dejan de depender del truco <code>Prefer: HonorNonIndexed…</code>.</li>
+</ol>
+
+<h2>5. Cargar los datos iniciales</h2>
+<ol>
+  <li>Abra <code>carga-inicial-listas-pulmones.xlsx</code>. Trae una hoja por lista, con las columnas en el mismo orden de esta guía.</li>
+  <li>Revise las celdas en amarillo (tienen un comentario).</li>
+  <li>En SharePoint abra la lista → <b>Editar en vista de cuadrícula</b> → clic en la primera celda vacía de <code>Title</code> → pegue las filas copiadas del Excel (sin encabezados) → <b>Salir de la vista de cuadrícula</b>.</li>
+  <li>Hoja <code>Usuarios</code>: agregue técnicos y usuarios de cada asociado antes de publicar la versión nueva. Los correos de los asociados se pueden sacar de los miembros de cada sitio Tu.HUB.</li>
+</ol>
+
+<h2>6. Permisos</h2>
+<p>Las 3 listas nuevas deben poder <b>leerlas todos</b> (la app las necesita para saber qué mostrar), pero <b>editarlas solo los administradores</b>. Por defecto heredan los permisos del sitio, y si los técnicos tienen edición en el sitio también podrían cambiar granjas desde SharePoint. Para cada una de las 3 listas:</p>
+<ol>
+  <li><b>⚙ → Configuración de la lista → Permisos para esta lista → Dejar de heredar permisos</b>.</li>
+  <li>Grupo de técnicos y usuarios de asociados: <b>Lectura</b>.</li>
+  <li>Administradores: <b>Control total</b>.</li>
+</ol>
+<p><code>InspeccionPulmones</code> sigue como está: técnicos con edición, asociados con lectura.</p>
+
+<h2>Lista de verificación</h2>
+<ul class="check">
+  <li>Lista <code>Asociados</code> creada con 5 columnas y 8 filas.</li>
+  <li>Lista <code>Granjas</code> creada con 5 columnas y 41 filas.</li>
+  <li>Lista <code>Usuarios</code> creada; Rol con las 3 opciones exactas; administradores, técnicos y usuarios de asociados cargados.</li>
+  <li><code>InspeccionPulmones</code>: columna <code>IdLocal</code> e índices en <code>IdLocal</code>, <code>granja_id</code>, <code>consecutivo</code>.</li>
+  <li>Nombres internos revisados (<code>Field=</code> en la URL de cada columna).</li>
+  <li>Permisos de las 3 listas: lectura para todos, control total solo administradores.</li>
+</ul>
+</div>
+</body>
+</html>
