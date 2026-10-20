@@ -2,7 +2,7 @@ import './resultados.css'
 import { estado } from '../../state'
 import { calcularAlcance, cargarDatos, codigosDeFiltro, type Alcance, type Catalogo, type Fila } from './datos'
 import {
-  barrasGranjas, barrasSeveridad, esc, fmt, graficaCategorias, graficaLotes, mapaPulmonar, pill, spark,
+  barrasGranjas, esc, explicacionCategorias, fmt, graficaCategorias, graficaLotes, mapaPulmonar, pill, spark,
   type FilaComp, type PuntoLote,
 } from './graficas'
 import { analisis, INDICADORES, nivelIdn, NIVEL_TXT, stats, type Stats } from './indicadores'
@@ -279,16 +279,14 @@ function vistaGranja(vis: Fila[], r: { desde: string; hasta: string }, red: Stat
     <div class="rs-panel"><h3>Mapa pulmonar</h3><p class="rs-sub">Consolidación promedio por lóbulo${f.lote ? ' del consecutivo' : ''}.</p>
       <div class="rs-lung"><div>${mp.svg}</div><div class="rs-lobes">${mp.lista}</div></div>
       <div class="rs-legend">${mp.leyenda}</div><div class="rs-callout"><b>Lectura:</b> ${mp.lectura}</div></div>
-    <div class="rs-panel"><h3>Cerdos por categoría Madec</h3><p class="rs-sub">0 = sin consolidación · 6 = más de 50 %.</p>${graficaCategorias(s)}
-      <h3 style="margin-top:14px">Severidad individual</h3><p class="rs-sub">Escala distinta al IDN: por % de consolidación de cada cerdo.</p>
-      ${barrasSeveridad([{ nombre: f.lote ? 'Consecutivo ' + f.lote : vista(f.granja), valor: 0, s }])}${leyendaSev()}</div>
+    <div class="rs-panel"><h3>Cerdos por categoría Madec</h3><p class="rs-sub">Qué porcentaje de los cerdos quedó en cada categoría, según cuánto pulmón tiene dañado (consolidación).</p>${graficaCategorias(s)}
+      ${explicacionCategorias()}</div>
   </div>
   <div class="rs-panel"><h3>Consecutivos</h3><div class="rs-scroll"><table class="rs-table"><thead><tr><th>Consecutivo</th><th>Fecha</th><th class="n">Cerdos</th><th>IDN</th><th class="n">Consolidación</th><th class="n">Neumonía</th><th class="n">Pleuritis</th><th class="n">GDP (kg)</th></tr></thead><tbody>
     ${[...lotes].sort((a, b) => b.fecha.getTime() - a.fecha.getTime()).map((l) => `<tr tabindex="0" class="${l.consec === f.lote ? 'sel' : ''}" data-go="${esc(f.granja)}" data-lote="${l.consec === f.lote ? '' : esc(l.consec)}"><td>${esc(l.consec)}</td><td>${l.fecha.toISOString().slice(0, 10)}</td><td class="n">${l.s.n}</td><td>${pill(l.s.idn)}</td><td class="n">${fmt(l.s.consol)} %</td><td class="n">${fmt(l.s.neum, 1)} %</td><td class="n">${fmt(l.s.pleur, 1)} %</td><td class="n">${fmt(l.s.gdp, 1)}</td></tr>`).join('')}
   </tbody></table></div><p class="rs-sub" style="margin-top:8px">Toque un consecutivo para ver solo ese consecutivo; tóquelo de nuevo para volver a todos.</p></div>`
 }
 
-const leyendaSev = () => `<div class="rs-legend">${[['--rs-sin', 'Sin 0 %'], ['--rs-leve', 'Leve ≤ 10 %'], ['--rs-mod', 'Moderada 10–30 %'], ['--rs-sev', 'Severa > 30 %']].map(([c, t]) => `<span><i style="background:var(${c})"></i>${t}</span>`).join('')}</div>`
 
 /* ══ Vista: Comparativo ══ */
 
@@ -305,13 +303,9 @@ function vistaComparativo(cur: Fila[], red: Stats) {
   const filas: FilaComp[] = pg.map((x) => ({ nombre: vista(x.g), valor: x.s[ind.key] as number, s: x.s })).sort((a, b) => b.valor - a.valor)
   const esIdn = ind.key === 'idn'
   const ref = ind.key === 'gdp' ? null : (red[ind.key] as number)
-  const sevFilas: FilaComp[] = pg.map((x) => ({ nombre: vista(x.g), valor: x.s.sev[0] / (x.s.n || 1), s: x.s })).sort((a, b) => a.valor - b.valor)
   const leyIdn = esIdn ? `<div class="rs-legend">${(['sin', 'leve', 'mod', 'sev'] as const).map((k) => `<span class="rs-pill rs-${k}"><i></i>${NIVEL_TXT[k]}</span>`).join('')}${ref != null ? `<span>┆ Red Cercafe ${ind.fmt(ref)}</span>` : ''}</div>`
     : ref != null ? `<div class="rs-legend"><span>┆ Red Cercafe ${ind.fmt(ref)}</span></div>` : ''
-  return `<div class="rs-grid2e">
-    <div class="rs-panel"><h3>${ind.lbl} por granja</h3><p class="rs-sub">${esIdn ? 'Color según la escala IDN.' : 'De mayor a menor.'} Línea punteada: red Cercafe.</p>${barrasGranjas(filas, esIdn, ind.fmt, ref)}${leyIdn}</div>
-    <div class="rs-panel"><h3>Severidad individual</h3><p class="rs-sub">Clasificación de cada cerdo por su % de consolidación (escala distinta al IDN).</p>${barrasSeveridad(sevFilas)}${leyendaSev()}</div>
-  </div>
+  return `<div class="rs-panel rs-comp-g"><h3>${ind.lbl} por granja</h3><p class="rs-sub">${esIdn ? 'Color según la escala IDN.' : 'De mayor a menor.'} Línea punteada: red Cercafe.</p>${barrasGranjas(filas, esIdn, ind.fmt, ref)}${leyIdn}</div>
   <div class="rs-panel"><div class="rs-tabla-hdr"><h3>Resultados por tabla</h3>
     <div class="rs-seg"><button data-nivel="granja" class="${f.nivelTabla === 'granja' ? 'on' : ''}">Por granja</button><button data-nivel="lote" class="${f.nivelTabla === 'lote' ? 'on' : ''}">Por consecutivo</button></div></div>
     <div class="rs-scroll">${tablaIndicadores(cur)}</div>

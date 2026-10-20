@@ -105,6 +105,25 @@ export function mapaPulmonar(s: Stats) {
 }
 
 /** Porcentaje de cerdos por categoría Madec (0–6). */
+/** Colores de las categorías Madec: del verde (pulmón sano) al vino tinto (más de la mitad dañado), pasando por mostaza. */
+export const CAT_COLOR = ['#2e7d4f', '#86a83a', '#c9a227', '#c4801f', '#b5541f', '#962f26', '#6b1a2a']
+const CAT_INFO: [string, string][] = [
+  ['Nada (0 %)', 'Pulmón sano'],
+  ['Hasta 10 %', 'Daño muy pequeño'],
+  ['Más de 10 % hasta 20 %', 'Daño pequeño'],
+  ['Más de 20 % hasta 30 %', 'Daño medio'],
+  ['Más de 30 % hasta 40 %', 'Daño importante'],
+  ['Más de 40 % hasta 50 %', 'Daño grave'],
+  ['Más de 50 %', 'Más de la mitad del pulmón dañado'],
+]
+
+/** Cuadro que explica cada categoría (para que cualquier persona lea la gráfica). */
+export function explicacionCategorias() {
+  return `<table class="rs-table rs-cats"><thead><tr><th>Categoría</th><th>Pulmón dañado</th><th>Qué significa</th></tr></thead><tbody>
+    ${CAT_INFO.map(([d, q], i) => `<tr><td><span class="rs-cat" style="background:${CAT_COLOR[i]}">${i}</span></td><td>${d}</td><td>${q}</td></tr>`).join('')}
+  </tbody></table>`
+}
+
 export function graficaCategorias(s: Stats) {
   if (!s.n) return ''
   const W = 420, H = 220, L = 36, R = 8, T = 18, B = 28
@@ -115,7 +134,7 @@ export function graficaCategorias(s: Stats) {
   for (let v = 0; v <= ymax; v += 20) o += `<line x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}" stroke="var(--rs-grid)"/><text x="${L - 6}" y="${y(v) + 4}" text-anchor="end" font-size="11" fill="var(--hint)">${v}%</text>`
   pct.forEach((p, i) => {
     const x = L + i * bw + bw * 0.18, w = bw * 0.64, h = y(0) - y(p), r = Math.min(4, h)
-    o += `<path d="M${x},${y(0)} L${x},${y(p) + r} Q${x},${y(p)} ${x + r},${y(p)} L${x + w - r},${y(p)} Q${x + w},${y(p)} ${x + w},${y(p) + r} L${x + w},${y(0)} Z" fill="var(--rs-s5)" data-tip="${esc(`Categoría ${i}<br>${s.cats[i]} cerdos (${fmt(p, 1)} %)`)}"/>`
+    o += `<path d="M${x},${y(0)} L${x},${y(p) + r} Q${x},${y(p)} ${x + r},${y(p)} L${x + w - r},${y(p)} Q${x + w},${y(p)} ${x + w},${y(p) + r} L${x + w},${y(0)} Z" fill="${CAT_COLOR[i]}" data-tip="${esc(`Categoría ${i}<br>${s.cats[i]} cerdos (${fmt(p, 1)} %)`)}"/>`
     o += `<text x="${x + w / 2}" y="${y(p) - 5}" text-anchor="middle" font-size="11" fill="var(--muted)">${fmt(p, 0)}%</text><text x="${x + w / 2}" y="${H - 10}" text-anchor="middle" font-size="11.5" fill="var(--hint)">${i}</text>`
   })
   return o + `<line x1="${L}" x2="${W - R}" y1="${y(0)}" y2="${y(0)}" stroke="var(--border)"/></svg>`
@@ -148,23 +167,3 @@ export function barrasGranjas(filas: FilaComp[], esIdn: boolean, f: (v: number) 
   return o + '</svg>'
 }
 
-/** Severidad individual en barras 100 % (reemplaza las donas). */
-export function barrasSeveridad(filas: FilaComp[]) {
-  if (!filas.length) return ''
-  const SEVN = ['Sin', 'Leve', 'Moderada', 'Severa'], SEVV = ['--rs-sin', '--rs-leve', '--rs-mod', '--rs-sev']
-  const W = 460, rowH = 24, L = 120, R = 18, T = 8, H = T + filas.length * rowH + 22
-  let o = `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="Severidad individual por granja">`
-  filas.forEach((f, i) => {
-    const yy = T + i * rowH + 5, h = rowH - 10
-    let acc = L
-    o += `<text x="${L - 8}" y="${yy + h - 2}" text-anchor="end" font-size="11.5" fill="var(--text)">${esc(f.nombre.length > 18 ? f.nombre.slice(0, 17) + '…' : f.nombre)}</text>`
-    f.s.sev.forEach((c, j) => {
-      const w = (c / (f.s.n || 1)) * (W - L - R)
-      if (w <= 0) return
-      o += `<rect x="${acc}" y="${yy}" width="${w}" height="${h}" fill="var(${SEVV[j]})" stroke="#fff" stroke-width="2" data-tip="${esc(`<b>${f.nombre}</b><br>${SEVN[j]}: ${c} cerdos (${fmt((c / (f.s.n || 1)) * 100, 1)} %)`)}"/>`
-      acc += w
-    })
-  })
-  for (let v = 0; v <= 100; v += 25) o += `<text x="${L + (v / 100) * (W - L - R)}" y="${H - 6}" text-anchor="middle" font-size="10.5" fill="var(--hint)">${v}%</text>`
-  return o + '</svg>'
-}

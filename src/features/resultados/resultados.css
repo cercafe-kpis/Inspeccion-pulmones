@@ -131,3 +131,9 @@
 #rs-listo[hidden]{display:none;}
 .rs-listo-box{pointer-events:auto;background:var(--card);border:1px solid var(--border);border-radius:var(--r);box-shadow:0 6px 24px rgba(0,0,0,.18);padding:12px 14px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;justify-content:space-between;max-width:520px;width:100%;font-size:14px;}
 .rs-listo-btns{display:flex;gap:6px;}
+
+/* Cuadro que explica las categorías Madec debajo de la gráfica */
+.rs-cats{margin-top:12px;font-size:12.5px;}
+.rs-cats td{white-space:normal;padding:5px 8px;}
+.rs-cat{display:inline-flex;align-items:center;justify-content:center;min-width:24px;height:22px;border-radius:6px;color:#fff;font-weight:700;font-size:12px;}
+.rs-comp-g svg{max-width:600px;display:block;margin:0 auto;}
