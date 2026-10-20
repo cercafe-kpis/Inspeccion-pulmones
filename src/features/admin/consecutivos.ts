@@ -29,8 +29,10 @@ export async function pintarConsecutivos() {
   granjaSel = null
   regs = []
   body().innerHTML = `<div class="adm-form"><h3>Cambiar consecutivo</h3>
-    <p style="font-size:13px;color:var(--muted);line-height:1.5;margin-bottom:10px">Escoja la granja y el consecutivo que quiere corregir. Se cambia en <b>todos</b> los pulmones de ese consecutivo en SharePoint; no cambia ninguna otra columna.</p>
-    <label class="lbl">Granja</label><select id="cs-granja"><option value="">Cargando granjas…</option></select></div>
+    <p style="font-size:13px;color:var(--muted);line-height:1.5;margin-bottom:10px">Busque el consecutivo o escoja la granja. Se cambia en <b>todos</b> los pulmones de ese consecutivo en SharePoint; no cambia ninguna otra columna.</p>
+    <label class="lbl">Buscar consecutivo</label>
+    <div class="adm-bar"><input type="text" id="cs-buscar" inputmode="numeric" autocomplete="off" placeholder="Ej: 128"><button class="adm-add" id="cs-btn-buscar">Buscar</button></div>
+    <label class="lbl">Granja <span style="text-transform:none;font-weight:400">(opcional)</span></label><select id="cs-granja"><option value="">Cargando granjas…</option></select></div>
     <div id="cs-cuerpo"></div>`
   if (!navigator.onLine) { $('cs-cuerpo').innerHTML = '<div class="adm-msg">Necesita conexión a internet.</div>'; return }
   try {
@@ -40,9 +42,61 @@ export async function pintarConsecutivos() {
     return
   }
   const sel = $<HTMLSelectElement>('cs-granja')
-  sel.innerHTML = '<option value="">Seleccione la granja…</option>' +
+  sel.innerHTML = '<option value="">Todas las granjas</option>' +
     granjas.map((g) => `<option value="${g.IdGranja}">${esc(nombre(g))}${g.Activa ? '' : ' (inactiva)'}</option>`).join('')
-  sel.onchange = () => cargarGranja(parseInt(sel.value))
+  sel.onchange = () => (sel.value ? cargarGranja(parseInt(sel.value)) : buscarEnTodas())
+  const inp = $<HTMLInputElement>('cs-buscar')
+  // Con granja escogida filtra mientras escribe; sin granja busca en todas al tocar Buscar (o Enter).
+  inp.oninput = () => { if (granjaSel && regs.length) pintarLista() }
+  inp.onkeydown = (e) => { if (e.key === 'Enter') buscar() }
+  $('cs-btn-buscar').onclick = buscar
+}
+
+const textoBuscado = () => ($<HTMLInputElement>('cs-buscar')?.value || '').trim()
+
+function buscar() {
+  if (granjaSel) { pintarLista(); return }
+  buscarEnTodas()
+}
+
+/** Busca el consecutivo exacto en todas las granjas (columna consecutivo indexada). */
+async function buscarEnTodas() {
+  granjaSel = null
+  regs = []
+  const q = textoBuscado()
+  if (!q) { $('cs-cuerpo').innerHTML = '<div class="adm-msg">Escriba un consecutivo y toque Buscar, o escoja una granja.</div>'; return }
+  $('cs-cuerpo').innerHTML = '<div class="adm-msg">Buscando…</div>'
+  try {
+    const items = await listarTodo<{ granja_id?: number | string; granja_nombre?: string; consecutivo?: string | number; fecha_inspeccion?: string }>(
+      LISTAS.INSPECCIONES,
+      `$filter=${encodeURIComponent(`fields/consecutivo eq '${q.replace(/'/g, "''")}'`)}&$expand=fields($select=granja_id,granja_nombre,consecutivo,fecha_inspeccion)&$top=999`,
+    )
+    const m = new Map<number, { nombre: string; n: number; desde: string; hasta: string }>()
+    items.forEach((i) => {
+      const id = parseInt(String(i.fields?.granja_id)) || 0
+      const f = String(i.fields?.fecha_inspeccion ?? '').split('T')[0]
+      const g = granjas.find((x) => x.IdGranja === id)
+      const x = m.get(id) || { nombre: g ? nombre(g) : String(i.fields?.granja_nombre || 'Granja ' + id), n: 0, desde: f, hasta: f }
+      x.n++
+      if (f && (!x.desde || f < x.desde)) x.desde = f
+      if (f > x.hasta) x.hasta = f
+      m.set(id, x)
+    })
+    if (!m.size) { $('cs-cuerpo').innerHTML = `<div class="adm-msg">No hay pulmones con el consecutivo ${esc(q)} en ninguna granja.</div>`; return }
+    $('cs-cuerpo').innerHTML = `<div class="adm-list">${[...m.entries()].sort((a, b) => b[1].hasta.localeCompare(a[1].hasta)).map(([id, x]) => `<div class="adm-row" data-g="${id}">
+        <div><div class="t">${esc(x.nombre)} · consecutivo ${esc(q)}</div><div class="s">${x.desde === x.hasta ? esc(x.desde) : esc(x.desde) + ' a ' + esc(x.hasta)}</div></div>
+        <span class="adm-tag">${n(x.n)} ${x.n === 1 ? "pulmón" : "pulmones"}</span></div>`).join('')}</div>`
+    document.querySelectorAll<HTMLElement>('#cs-cuerpo .adm-row').forEach((el) => {
+      el.onclick = async () => {
+        const id = parseInt(el.dataset.g!)
+        $<HTMLSelectElement>('cs-granja').value = String(id)
+        await cargarGranja(id)
+        if (regs.some((r) => r.consec === q)) pintarFormulario(q)
+      }
+    })
+  } catch (e) {
+    $('cs-cuerpo').innerHTML = `<div class="adm-msg">No se pudo buscar: ${esc((e as Error).message)}</div>`
+  }
 }
 
 async function cargarGranja(id: number) {
@@ -80,11 +134,14 @@ function resumen() {
 }
 
 function pintarLista() {
-  const lista = resumen()
-  if (!lista.length) { $('cs-cuerpo').innerHTML = '<div class="adm-msg">Esta granja no tiene pulmones registrados.</div>'; return }
+  const todos = resumen()
+  if (!todos.length) { $('cs-cuerpo').innerHTML = '<div class="adm-msg">Esta granja no tiene pulmones registrados.</div>'; return }
+  const q = textoBuscado().toLowerCase()
+  const lista = q ? todos.filter(([c]) => c.toLowerCase().includes(q)) : todos
+  if (!lista.length) { $('cs-cuerpo').innerHTML = `<div class="adm-msg">Ningún consecutivo de ${esc(nombre(granjaSel!))} contiene "${esc(q)}".</div>`; return }
   $('cs-cuerpo').innerHTML = `<div class="adm-list">${lista.map(([c, x]) => `<div class="adm-row" data-c="${esc(c)}">
       <div><div class="t">Consecutivo ${esc(c || '(vacío)')}</div><div class="s">${x.desde === x.hasta ? esc(x.desde) : esc(x.desde) + ' a ' + esc(x.hasta)}</div></div>
-      <span class="adm-tag">${n(x.n)} pulmones</span></div>`).join('')}</div>`
+      <span class="adm-tag">${n(x.n)} ${x.n === 1 ? "pulmón" : "pulmones"}</span></div>`).join('')}</div>`
   document.querySelectorAll<HTMLElement>('#cs-cuerpo .adm-row').forEach((el) => { el.onclick = () => pintarFormulario(el.dataset.c!) })
 }
 
