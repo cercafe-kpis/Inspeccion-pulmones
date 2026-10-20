@@ -7,10 +7,11 @@ import { estado } from '../../state'
 import { showToast } from '../../ui/avisos'
 
 /**
- * Administrar → Consecutivos: cambia el consecutivo de todos los pulmones de una granja + consecutivo
- * en la lista InspeccionPulmones (por ejemplo, si el técnico lo digitó mal).
- * Solo cambia la columna `consecutivo`. Si el consecutivo nuevo ya existe en esa granja, los pulmones se
- * unen a él, siempre que no se repita ningún número de orden.
+ * Administrar → Consecutivos: corrige la granja y/o el consecutivo de todos los pulmones de una granja +
+ * consecutivo en la lista InspeccionPulmones (por ejemplo, si el técnico escogió mal la granja o digitó mal
+ * el consecutivo). Cambia consecutivo, granja_id, granja_nombre y Title (granja-consecutivo-orden); los datos
+ * del pulmón no se tocan. Si el destino ya existe, los pulmones se unen a él siempre que no se repita
+ * ningún número de orden.
  */
 
 interface Reg { id: string; consec: string; orden: number; fecha: string }
@@ -28,8 +29,8 @@ const n = (x: number) => x.toLocaleString('es-CO')
 export async function pintarConsecutivos() {
   granjaSel = null
   regs = []
-  body().innerHTML = `<div class="adm-form"><h3>Cambiar consecutivo</h3>
-    <p style="font-size:13px;color:var(--muted);line-height:1.5;margin-bottom:10px">Busque el consecutivo o escoja la granja. Se cambia en <b>todos</b> los pulmones de ese consecutivo en SharePoint; no cambia ninguna otra columna.</p>
+  body().innerHTML = `<div class="adm-form"><h3>Corregir consecutivo o granja</h3>
+    <p style="font-size:13px;color:var(--muted);line-height:1.5;margin-bottom:10px">Busque el consecutivo o escoja la granja. El cambio se hace en <b>todos</b> los pulmones de ese consecutivo en SharePoint (granja, consecutivo y Título); no cambia los datos del pulmón.</p>
     <label class="lbl">Buscar consecutivo</label>
     <div class="adm-bar"><input type="text" id="cs-buscar" inputmode="numeric" autocomplete="off" placeholder="Ej: 128"><button class="adm-add" id="cs-btn-buscar">Buscar</button></div>
     <label class="lbl">Granja <span style="text-transform:none;font-weight:400">(opcional)</span></label><select id="cs-granja"><option value="">Cargando granjas…</option></select></div>
@@ -145,72 +146,125 @@ function pintarLista() {
   document.querySelectorAll<HTMLElement>('#cs-cuerpo .adm-row').forEach((el) => { el.onclick = () => pintarFormulario(el.dataset.c!) })
 }
 
-function pintarFormulario(actual: string) {
-  const mios = regs.filter((r) => r.consec === actual)
-  $('cs-cuerpo').innerHTML = `<div class="adm-form"><h3>${esc(nombre(granjaSel!))} · consecutivo ${esc(actual || '(vacío)')}</h3>
-    <p style="font-size:13px;color:var(--muted);margin-bottom:10px">${n(mios.length)} pulmones (órdenes ${Math.min(...mios.map((r) => r.orden))} a ${Math.max(...mios.map((r) => r.orden))}).</p>
-    <label class="lbl">Consecutivo nuevo</label><input type="text" id="cs-nuevo" inputmode="numeric" autocomplete="off" placeholder="Ej: 128">
-    <div id="cs-aviso" class="adm-msg" style="text-align:left;padding:10px 0;display:none"></div>
-    <div class="adm-actions"><button class="btn-primary" id="cs-aplicar" disabled>Cambiar consecutivo</button><button class="btn-cancel" id="cs-volver">Volver</button></div></div>`
-  const inp = $<HTMLInputElement>('cs-nuevo'), btn = $<HTMLButtonElement>('cs-aplicar'), aviso = $('cs-aviso')
-  $('cs-volver').onclick = pintarLista
-  inp.focus()
-  inp.oninput = () => {
-    const nuevo = inp.value.trim()
-    btn.disabled = true
-    aviso.style.display = 'none'
-    if (!nuevo || nuevo === actual) return
-    const destino = regs.filter((r) => r.consec === nuevo)
-    aviso.style.display = 'block'
-    if (destino.length) {
-      const ya = new Set(destino.map((r) => r.orden))
-      const choques = [...new Set(mios.filter((r) => ya.has(r.orden)).map((r) => r.orden))].sort((a, b) => a - b)
-      if (choques.length) {
-        aviso.innerHTML = `<span class="adm-err">⛔ El consecutivo ${esc(nuevo)} ya existe en esta granja (${n(destino.length)} pulmones) y se repetirían ${choques.length} número(s) de orden: ${choques.slice(0, 15).join(', ')}${choques.length > 15 ? '…' : ''}. No se puede cambiar.</span>`
-        return
-      }
-      aviso.innerHTML = `⚠️ El consecutivo <b>${esc(nuevo)}</b> ya existe en esta granja con ${n(destino.length)} pulmones. Los ${n(mios.length)} pulmones se <b>unirán</b> a ese consecutivo (no se repite ningún orden).`
-    } else {
-      aviso.innerHTML = `Se cambiarán <b>${n(mios.length)}</b> pulmones del consecutivo ${esc(actual)} al <b>${esc(nuevo)}</b>.`
-    }
-    btn.disabled = false
-  }
-  btn.onclick = () => aplicar(actual, inp.value.trim(), mios)
+interface Destino { granja: GranjaSP; consec: string }
+
+/** Pulmones que ya existen en el destino (granja + consecutivo). Si es la misma granja, ya están en memoria. */
+async function pulmonesDestino(d: Destino): Promise<Reg[]> {
+  if (d.granja.IdGranja === granjaSel!.IdGranja) return regs.filter((r) => r.consec === d.consec)
+  const filtro = `fields/granja_id eq ${d.granja.IdGranja} and fields/consecutivo eq '${d.consec.replace(/'/g, "''")}'`
+  const items = await listarTodo<{ orden?: string | number }>(LISTAS.INSPECCIONES, `$filter=${encodeURIComponent(filtro)}&$expand=fields($select=orden)&$top=999`)
+  return items.map((i) => ({ id: i.id, consec: d.consec, orden: parseInt(String(i.fields?.orden)) || 0, fecha: '' }))
 }
 
-async function aplicar(actual: string, nuevo: string, mios: Reg[]) {
-  if (!confirm(`¿Cambiar el consecutivo ${actual} por ${nuevo} en ${mios.length} pulmones de ${nombre(granjaSel!)}?`)) return
+function pintarFormulario(actual: string) {
+  const mios = regs.filter((r) => r.consec === actual)
+  const g0 = granjaSel!
+  const opciones = granjas.filter((g) => g.Activa || g.IdGranja === g0.IdGranja)
+    .map((g) => `<option value="${g.IdGranja}" ${g.IdGranja === g0.IdGranja ? 'selected' : ''}>${esc(nombre(g))}${g.Activa ? '' : ' (inactiva)'}</option>`).join('')
+  $('cs-cuerpo').innerHTML = `<div class="adm-form"><h3>${esc(nombre(g0))} · consecutivo ${esc(actual || '(vacío)')}</h3>
+    <p style="font-size:13px;color:var(--muted);margin-bottom:10px">${n(mios.length)} ${mios.length === 1 ? 'pulmón' : 'pulmones'} (órdenes ${Math.min(...mios.map((r) => r.orden))} a ${Math.max(...mios.map((r) => r.orden))}). Cambie la granja, el consecutivo o los dos.</p>
+    <label class="lbl">Granja</label><select id="cs-ngranja">${opciones}</select>
+    <label class="lbl" style="margin-top:10px">Consecutivo</label><input type="text" id="cs-nuevo" inputmode="numeric" autocomplete="off" value="${esc(actual)}">
+    <div id="cs-aviso" class="adm-msg" style="text-align:left;padding:10px 0;display:none"></div>
+    <div class="adm-actions"><button class="btn-primary" id="cs-aplicar" disabled>Guardar cambio</button><button class="btn-cancel" id="cs-volver">Volver</button></div></div>`
+  const inp = $<HTMLInputElement>('cs-nuevo'), selG = $<HTMLSelectElement>('cs-ngranja'), btn = $<HTMLButtonElement>('cs-aplicar'), aviso = $('cs-aviso')
+  $('cs-volver').onclick = pintarLista
+  let destino: Destino | null = null
+  let turno = 0
+  const revisar = async () => {
+    const yo = ++turno
+    btn.disabled = true
+    destino = null
+    const consec = inp.value.trim()
+    const granja = granjas.find((g) => g.IdGranja === parseInt(selG.value))!
+    aviso.style.display = 'none'
+    if (!consec || (consec === actual && granja.IdGranja === g0.IdGranja)) return
+    aviso.style.display = 'block'
+    aviso.textContent = 'Revisando…'
+    let ya: Reg[]
+    try {
+      ya = await pulmonesDestino({ granja, consec })
+    } catch (e) {
+      if (yo === turno) aviso.innerHTML = `<span class="adm-err">No se pudo revisar el destino: ${esc((e as Error).message)}</span>`
+      return
+    }
+    if (yo !== turno) return // la persona siguió escribiendo
+    const otraGranja = granja.IdGranja !== g0.IdGranja
+    const que = otraGranja ? `la granja <b>${esc(nombre(granja))}</b>, consecutivo <b>${esc(consec)}</b>` : `el consecutivo <b>${esc(consec)}</b>`
+    if (ya.length) {
+      const set = new Set(ya.map((r) => r.orden))
+      const choques = [...new Set(mios.filter((r) => set.has(r.orden)).map((r) => r.orden))].sort((a, b) => a - b)
+      if (choques.length) {
+        aviso.innerHTML = `<span class="adm-err">⛔ En ${que} ya hay ${n(ya.length)} pulmones y se repetirían ${choques.length} número(s) de orden: ${choques.slice(0, 15).join(', ')}${choques.length > 15 ? '…' : ''}. No se puede cambiar.</span>`
+        return
+      }
+      aviso.innerHTML = `⚠️ En ${que} ya hay ${n(ya.length)} pulmones. Los ${n(mios.length)} pulmones se <b>unirán</b> ahí (no se repite ningún orden).`
+    } else {
+      aviso.innerHTML = `Se pasarán <b>${n(mios.length)}</b> pulmones a ${que}.`
+    }
+    aviso.innerHTML += '<br><span style="font-size:12px">También se actualiza el Título de cada registro (granja-consecutivo-orden).</span>'
+    destino = { granja, consec }
+    btn.disabled = false
+  }
+  let espera: ReturnType<typeof setTimeout>
+  inp.oninput = () => { btn.disabled = true; clearTimeout(espera); espera = setTimeout(revisar, 400) }
+  selG.onchange = revisar
+  inp.focus()
+  btn.onclick = () => { if (destino) aplicar(actual, destino, mios) }
+}
+
+/** Título del registro, igual que lo arma la captura: granja-consecutivo-orden. */
+const tituloDe = (granja: string, consec: string, orden: number) => `${granja}-${consec}-${orden}`
+
+async function aplicar(actual: string, d: Destino, mios: Reg[]) {
+  const g0 = granjaSel!
+  const cambioGranja = d.granja.IdGranja !== g0.IdGranja
+  const desc = `${nombre(g0)} · ${actual}  →  ${nombre(d.granja)} · ${d.consec}`
+  if (!confirm(`¿Pasar ${mios.length} pulmones de\n${desc}?`)) return
   const btn = $<HTMLButtonElement>('cs-aplicar'), aviso = $('cs-aviso')
   btn.disabled = true
   $<HTMLButtonElement>('cs-volver').disabled = true
   $<HTMLInputElement>('cs-nuevo').disabled = true
+  $<HTMLSelectElement>('cs-ngranja').disabled = true
+  const campos = (x: Reg): Record<string, unknown> => ({
+    consecutivo: d.consec,
+    Title: tituloDe(d.granja.Title, d.consec, x.orden),
+    ...(cambioGranja ? { granja_id: d.granja.IdGranja, granja_nombre: d.granja.Title } : {}),
+  })
   try {
-    const r = await actualizarEnBloque(LISTAS.INSPECCIONES, mios.map((x) => ({ id: x.id, fields: { consecutivo: nuevo } })),
+    const r = await actualizarEnBloque(LISTAS.INSPECCIONES, mios.map((x) => ({ id: x.id, fields: campos(x) })),
       (ok, total) => { aviso.textContent = `Cambiando… ${n(ok)} de ${n(total)}` })
-    renombrarEnEsteEquipo(granjaSel!.IdGranja, actual, nuevo)
-    showToast(r.fallos ? `Se cambiaron ${r.ok} pulmones; ${r.fallos} fallaron. Vuelva a abrir el consecutivo ${actual} para terminar.` : `✓ ${r.ok} pulmones pasaron al consecutivo ${nuevo}`, r.fallos ? 'warn' : 'ok', 7000)
+    renombrarEnEsteEquipo(g0.IdGranja, actual, d)
+    showToast(r.fallos ? `Se cambiaron ${r.ok} pulmones; ${r.fallos} fallaron. Vuelva a abrir el consecutivo ${actual} para terminar.` : `✓ ${r.ok} pulmones pasaron a ${nombre(d.granja)} · ${d.consec}`, r.fallos ? 'warn' : 'ok', 7000)
   } catch (e) {
     showToast('No se pudo terminar el cambio: ' + (e as Error).message + '. Vuelva a abrir el consecutivo para revisar.', 'err', 8000)
   }
-  await cargarGranja(granjaSel!.IdGranja)
+  // Se queda en la granja de origen para ver lo que falte (si todo pasó, el consecutivo ya no aparece).
+  await cargarGranja(g0.IdGranja)
 }
 
-/** En ESTE equipo: pendientes sin subir, captura en curso y memorias de orden pasan al consecutivo nuevo. */
-function renombrarEnEsteEquipo(gId: number, viejo: string, nuevo: string) {
+/** En ESTE equipo: pendientes sin subir, captura en curso y memorias de orden pasan al destino nuevo. */
+function renombrarEnEsteEquipo(gId: number, viejo: string, d: Destino) {
+  const es = (g: unknown, c: unknown) => Number(g) === gId && String(c).trim() === viejo
   try {
-    const q = JSON.parse(localStorage.getItem(QUEUE_KEY) || '[]') as { fields: { granja_id: number; consecutivo: string } }[]
+    const q = JSON.parse(localStorage.getItem(QUEUE_KEY) || '[]') as { fields: Record<string, unknown> }[]
     let cambio = false
-    q.forEach((it) => { if (it.fields && Number(it.fields.granja_id) === gId && String(it.fields.consecutivo).trim() === viejo) { it.fields.consecutivo = nuevo; cambio = true } })
+    q.forEach((it) => {
+      if (it.fields && es(it.fields.granja_id, it.fields.consecutivo)) {
+        Object.assign(it.fields, { consecutivo: d.consec, granja_id: d.granja.IdGranja, granja_nombre: d.granja.Title, Title: tituloDe(d.granja.Title, d.consec, Number(it.fields.orden) || 0) })
+        cambio = true
+      }
+    })
     if (cambio) localStorage.setItem(QUEUE_KEY, JSON.stringify(q))
     for (const k of ['insp_pulmones_orden_cache', 'insp_pulmones_ultimo_local']) {
       const c = JSON.parse(localStorage.getItem(k) || '{}') as Record<string, unknown>
       if (`${gId}|${viejo}` in c) { delete c[`${gId}|${viejo}`]; localStorage.setItem(k, JSON.stringify(c)) }
     }
-    const s = JSON.parse(localStorage.getItem('insp_pulmones_sesion_activa') || 'null') as { gId: number; consec: string } | null
-    if (s && Number(s.gId) === gId && String(s.consec).trim() === viejo) {
-      s.consec = nuevo
+    const s = JSON.parse(localStorage.getItem('insp_pulmones_sesion_activa') || 'null') as { gId: number; gN: string; consec: string } | null
+    if (s && es(s.gId, s.consec)) {
+      Object.assign(s, { gId: d.granja.IdGranja, gN: d.granja.Title, consec: d.consec })
       localStorage.setItem('insp_pulmones_sesion_activa', JSON.stringify(s))
     }
-    if (estado.sesion && Number(estado.sesion.gId) === gId && String(estado.sesion.consec).trim() === viejo) estado.sesion.consec = nuevo
+    if (estado.sesion && es(estado.sesion.gId, estado.sesion.consec)) Object.assign(estado.sesion, { gId: d.granja.IdGranja, gN: d.granja.Title, consec: d.consec })
   } catch { /* copia local dañada: no afecta lo que ya quedó en SharePoint */ }
 }
