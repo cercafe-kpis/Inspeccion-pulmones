@@ -205,3 +205,9 @@ input:focus{outline:none;border-color:var(--gm);background:#fff;box-shadow:0 0 0
 .adm-actions .btn-cancel{height:46px;padding:0 16px;background:none;border:1px solid var(--border);border-radius:var(--rs);font-size:14px;color:var(--muted);cursor:pointer;}
 .adm-msg{font-size:13px;color:var(--muted);padding:14px;text-align:center;}
 .adm-err{font-size:13px;color:var(--red);margin-bottom:8px;}
+
+/* ══ PESTAÑAS POR ROL (nuevo) ══ */
+.nav-vistas{display:flex;background:var(--card);border-bottom:1px solid var(--borderl);padding:0 .5rem;position:sticky;top:50px;z-index:150;}
+.nav-vistas button{flex:1;background:none;border:none;border-bottom:3px solid transparent;padding:11px 6px;font-size:14px;font-weight:600;color:var(--muted);cursor:pointer;touch-action:manipulation;}
+.nav-vistas button.on{color:var(--g);border-bottom-color:var(--g);}
+@media(min-width:700px){.nav-vistas{justify-content:flex-start;padding:0 1rem;}.nav-vistas button{flex:0 0 auto;padding:11px 18px;}}

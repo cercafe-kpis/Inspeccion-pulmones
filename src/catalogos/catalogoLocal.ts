@@ -64,8 +64,11 @@ function normalizarRol(r: string): string {
 
 function evaluar(u: UsuarioApp): ResultadoUsuario {
   if (!u.activo) return { estado: 'sin-acceso', motivo: 'Su usuario está inactivo en la app de inspección pulmonar. Contacte al administrador.' }
-  if (u.rol !== 'Administrador' && u.rol !== 'Tecnico') {
-    return { estado: 'sin-acceso', motivo: 'Esta cuenta es de consulta: los resultados se ven en el Score Pulmonar de su sitio Tu.HUB. La captura es solo para técnicos.' }
+  if (u.rol !== 'Administrador' && u.rol !== 'Tecnico' && u.rol !== 'Asociado') {
+    return { estado: 'sin-acceso', motivo: `Su usuario tiene un rol no reconocido ("${u.rol}"). Contacte al administrador.` }
+  }
+  if (u.rol === 'Asociado' && !u.asociados.length) {
+    return { estado: 'sin-acceso', motivo: 'Su usuario no tiene asociados asignados. Contacte al administrador.' }
   }
   return { estado: 'ok', usuario: u }
 }
@@ -84,7 +87,7 @@ export async function resolverUsuario(correo: string): Promise<ResultadoUsuario>
       const sp = todos.find((u) => u.Correo === correo)
       if (!sp) {
         try { localStorage.removeItem(KEY_USUARIO) } catch { /* nada */ }
-        return { estado: 'sin-acceso', motivo: `La cuenta ${correo} no está registrada en la app de inspección pulmonar. Pida al administrador que la agregue en Usuarios.` }
+        return { estado: 'sin-acceso', motivo: `La cuenta ${correo} no está registrada en Inspección Pulmonar. Pida a Cercafe que la agregue en Usuarios.` }
       }
       const u: UsuarioApp = {
         correo,

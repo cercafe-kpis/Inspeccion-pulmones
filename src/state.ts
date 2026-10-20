@@ -32,3 +32,14 @@ export const estado = {
   /** Usuario de la lista Usuarios (null mientras no se sepa). */
   usuario: null as UsuarioApp | null,
 }
+
+export type Vista = 'captura' | 'resultados' | 'admin'
+
+/** Qué pantallas puede usar cada rol. Sin usuario conocido (sin señal la primera vez) solo captura. */
+export function vistasPermitidas(u: UsuarioApp | null): Vista[] {
+  if (!u) return ['captura']
+  if (u.rol === 'Administrador') return ['captura', 'resultados', 'admin']
+  if (u.rol === 'Tecnico') return ['captura', 'resultados']
+  if (u.rol === 'Asociado') return ['resultados']
+  return []
+}

@@ -41,12 +41,22 @@ export function calcularIndicadores(lobVals: Record<string, number | null>, hall
   else if (consol > 50) categ = 6
   const gdpGr = interpGDP(consol)
   const gdpKg = (gdpGr * CONFIG.DIAS_CEBA) / 1000
-  let sev = 'Sin afectacion'
-  if (idn > 0.1 && idn <= 0.25) sev = 'Leve'
-  else if (idn <= 0.5) sev = 'Moderada'
-  else if (idn > 0.5) sev = 'Severa'
+  const sev = severidadDe(consol)
   const pleurT = hallVals.pleuritis_leve === 1 || hallVals.pleuritis_severa === 1
   return { consol, categ, sev, pleurT, gdpGr, gdpKg }
+}
+
+/**
+ * Severidad del animal según su % de consolidación.
+ * CORREGIDO 2026-10-20: antes la condición de "Moderada" no tenía límite inferior y los animales con
+ * 0–10 % quedaban como "Moderada". Ahora: ≤10 % Sin afectacion · >10–25 % Leve · >25–50 % Moderada · >50 % Severa.
+ * (Es una columna informativa; el IDN y la dona de severidad del dashboard se calculan aparte.)
+ */
+export function severidadDe(consol: number): string {
+  if (consol > 50) return 'Severa'
+  if (consol > 25) return 'Moderada'
+  if (consol > 10) return 'Leve'
+  return 'Sin afectacion'
 }
 
 /** Identificador único por registro (columna IdLocal) — evita duplicados al reintentar subidas. */

@@ -5,6 +5,7 @@ import {
 } from '../../graph/catalogos'
 import { estado } from '../../state'
 import { showScreen, showToast } from '../../ui/avisos'
+import { pintarMantenimiento } from './mantenimiento'
 
 /**
  * Pantalla de administración (solo Rol = Administrador): Granjas, Asociados y Usuarios.
@@ -13,7 +14,7 @@ import { showScreen, showToast } from '../../ui/avisos'
  * con las inspecciones históricas.
  */
 
-type Tab = 'granjas' | 'asociados' | 'usuarios'
+type Tab = 'granjas' | 'asociados' | 'usuarios' | 'mantenimiento'
 let tab: Tab = 'granjas'
 let filtro = ''
 let datos: { granjas: GranjaSP[]; asociados: AsociadoSP[]; usuarios: UsuarioSP[] } = { granjas: [], asociados: [], usuarios: [] }
@@ -33,14 +34,16 @@ export async function abrirAdmin() {
 }
 
 export function cerrarAdmin() {
-  showScreen(estado.sesion?.gId ? 's-captura' : 's-sesion')
+  // Vuelve a la pestaña Captura (import diferido para no crear un ciclo con ui/navegacion).
+  import('../../ui/navegacion').then((m) => m.irA('captura'))
 }
 
 export function admTab(t: Tab) {
   tab = t
   filtro = ''
   document.querySelectorAll<HTMLButtonElement>('#adm-tabs button').forEach((b) => b.classList.toggle('on', b.dataset.tab === t))
-  pintarLista()
+  if (t === 'mantenimiento') pintarMantenimiento()
+  else pintarLista()
 }
 
 async function cargar() {
@@ -52,7 +55,8 @@ async function cargar() {
   try {
     const [granjas, asociados, usuarios] = await Promise.all([listarGranjas(), listarAsociados(), listarUsuarios()])
     datos = { granjas, asociados, usuarios }
-    pintarLista()
+    if (tab === 'mantenimiento') pintarMantenimiento()
+    else pintarLista()
   } catch (e) {
     body().innerHTML = `<div class="adm-msg">No se pudieron cargar las listas: ${esc((e as Error).message)}</div>`
   }
@@ -82,7 +86,7 @@ function pintarLista() {
       .map((u) => fila(u.spId, u.Title || u.Correo, `${u.Correo} · ${u.Rol}${u.Asociados ? ' · ' + u.Asociados.replace(/;/g, ', ') : ''}`, u.Activo))
       .join('')
   }
-  const nuevo = { granjas: '+ Nueva granja', asociados: '+ Nuevo asociado', usuarios: '+ Nuevo usuario' }[tab]
+  const nuevo = ({ granjas: '+ Nueva granja', asociados: '+ Nuevo asociado', usuarios: '+ Nuevo usuario' } as Record<string, string>)[tab]
   body().innerHTML = `
     <div class="adm-bar">
       <input type="text" id="adm-buscar" placeholder="Buscar…" value="${esc(filtro)}" autocomplete="off">

@@ -2,12 +2,13 @@ import './styles.css'
 import type { AccountInfo } from '@azure/msal-browser'
 import { loginPopup, logout, restaurarCuenta } from './auth/msal'
 import { refrescarGranjas, resolverUsuario, usuarioLocal, type ResultadoUsuario } from './catalogos/catalogoLocal'
-import { abrirAdmin, admTab, cerrarAdmin, esAdministrador } from './features/admin/admin'
+import { abrirAdmin, admTab, cerrarAdmin } from './features/admin/admin'
 import { guardarYSiguiente, saltarAnimal } from './features/captura/captura'
 import { abrirG, buildHallazgos, buildLobulos, filtrarG, iniciarBuscadorGranja } from './features/captura/formulario'
 import { actualizarOrdenSugerido, iniciarSesion, irSesion, onConsecInput, revisarSesionPendiente } from './features/captura/sesion'
 import { autoSincronizar, iniciarSincronizacionAutomatica, sincronizarPendientes } from './offline/sync'
-import { estado } from './state'
+import { estado, vistasPermitidas } from './state'
+import { irA, pintarNav } from './ui/navegacion'
 import { actualizarSyncBar, mostrarPendientesLogin, pintarVersion, showToast } from './ui/avisos'
 import { fechaLocalHoy } from './utils/madec'
 
@@ -52,16 +53,26 @@ function bloquear(motivo: string) {
 /** Aplica el resultado de la verificación de usuario. Devuelve true si puede seguir. */
 function aplicarUsuario(r: ResultadoUsuario): boolean {
   if (r.estado === 'sin-acceso') { bloquear(r.motivo); return false }
-  if (r.estado === 'ok') estado.usuario = r.usuario
-  document.getElementById('btn-admin')!.style.display = esAdministrador() ? '' : 'none'
+  if (r.estado === 'ok') estado.usuario = r.usuario // 'desconocido' (sin red): se conserva lo que ya se sabía
+  pintarNav()
   return true
+}
+
+/** Pestaña inicial: Asociado → Resultados; enlace con ?vista=resultados o ?site= (desde Tu.HUB) → Resultados; si no, Captura. */
+const params = new URLSearchParams(location.search)
+const pideResultados = params.get('vista') === 'resultados' || !!params.get('site') || location.hash === '#resultados'
+function pantallaInicial(): 'captura' | 'resultados' {
+  const vistas = vistasPermitidas(estado.usuario)
+  if (!vistas.includes('captura')) return 'resultados'
+  if (pideResultados && vistas.includes('resultados')) return 'resultados'
+  return 'captura'
 }
 
 /**
  * Muestra la app ya autenticada (igual que antes) y, además:
  *  - verifica la cuenta en la lista Usuarios (primero con la copia del celular, luego con SharePoint);
  *  - actualiza la copia de granjas activas;
- *  - muestra "Administrar" solo al Rol Administrador.
+ *  - muestra las pestañas que corresponden al rol (Captura / Resultados / Administrar).
  */
 async function showApp(acc: AccountInfo) {
   document.getElementById('login-acceso')!.style.display = 'none'
@@ -79,14 +90,24 @@ async function showApp(acc: AccountInfo) {
   const correo = acc.username || ''
   const previo = usuarioLocal(correo)
   // Con copia buena (o sin copia todavía) se sigue de inmediato: nunca frenar la captura en campo esperando la red.
-  const siguioDeInmediato = previo.estado !== 'sin-acceso' && aplicarUsuario(previo)
-  if (siguioDeInmediato) revisarSesionPendiente()
+  let inicial: 'captura' | 'resultados' | null = null
+  if (previo.estado !== 'sin-acceso' && aplicarUsuario(previo)) {
+    inicial = pantallaInicial()
+    irA(inicial)
+    if (inicial === 'captura') revisarSesionPendiente()
+  }
 
   refrescarGranjas()
   const r = await resolverUsuario(correo)
   if (r.estado === 'desconocido' && previo.estado === 'sin-acceso') { aplicarUsuario(previo); return }
   if (!aplicarUsuario(r)) return
-  if (!siguioDeInmediato) revisarSesionPendiente()
+  const ahora = pantallaInicial()
+  if (inicial === null) {
+    irA(ahora)
+    if (ahora === 'captura') revisarSesionPendiente()
+  } else if (ahora !== inicial && (ahora === 'resultados' || !vistasPermitidas(estado.usuario).includes(inicial))) {
+    irA(ahora) // p. ej. la primera vez de un usuario de asociado: no tenía copia y resultó ser "solo Resultados"
+  }
 }
 
 /* ── Arranque ── */
@@ -143,5 +164,5 @@ Object.assign(window, {
   sincronizarPendientes: () => sincronizarPendientes(),
   filtrarG, abrirG, onConsecInput, actualizarOrdenSugerido,
   iniciarSesion, irSesion, guardarYSiguiente, saltarAnimal,
-  abrirAdmin, cerrarAdmin, admTab,
+  abrirAdmin, cerrarAdmin, admTab, irA,
 })

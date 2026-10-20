@@ -1,0 +1,411 @@
+import './resultados.css'
+import { estado } from '../../state'
+import { showToast } from '../../ui/avisos'
+import { calcularAlcance, cargarDatos, codigosDeFiltro, type Alcance, type Catalogo, type Fila } from './datos'
+import {
+  barrasGranjas, barrasSeveridad, esc, fmt, graficaCategorias, graficaLotes, mapaPulmonar, pill, spark,
+  type FilaComp, type PuntoLote,
+} from './graficas'
+import { analisis, INDICADORES, nivelIdn, NIVEL_TXT, stats, type Stats } from './indicadores'
+
+/**
+ * Pestaña "Resultados" (antes: dashboard Score Pulmonar aparte).
+ * Vistas: Resumen · Granja y lotes · Comparativo. Exporta a Excel y a PDF (impresión del navegador).
+ * Qué granjas ve cada cuenta lo decide calcularAlcance() con la lista Usuarios.
+ */
+
+type Tab = 'res' | 'gra' | 'com'
+interface Filtros { asoc: string; periodo: string; desde: string; hasta: string; tab: Tab; granja: string; lote: string; ind: string; nivelTabla: 'granja' | 'lote' }
+
+const KEY_FILTROS = 'insp_pulmones_resultados_filtros'
+let f: Filtros = { asoc: '', periodo: '12', desde: '', hasta: '', tab: 'res', granja: '', lote: '', ind: 'idn', nivelTabla: 'granja' }
+try { f = { ...f, ...JSON.parse(localStorage.getItem(KEY_FILTROS) || '{}') } } catch { /* sin filtros guardados */ }
+const guardarFiltros = () => { try { localStorage.setItem(KEY_FILTROS, JSON.stringify(f)) } catch { /* nada */ } }
+
+let datos: { filas: Fila[]; cat: Catalogo } | null = null
+let cargando: Promise<void> | null = null
+let alcance: Alcance = { codigos: null, principal: null, tuHub: null, vistaPrevia: false }
+let actualizadoEn: Date | null = null
+
+const root = () => document.getElementById('rs-root')!
+const siteParam = () => (new URLSearchParams(location.search).get('site') || '').toUpperCase()
+const hoyISO = () => { const d = new Date(); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0') }
+const aFecha = (iso: string) => new Date(iso + 'T12:00:00')
+
+/* ══ Entrada ══ */
+
+export async function abrirResultados(forzar = false) {
+  iniciarTooltip()
+  if (!navigator.onLine && !datos) {
+    root().innerHTML = '<div class="rs"><div class="rs-panel rs-empty">Resultados necesita conexión a internet. La captura sigue funcionando sin señal.</div></div>'
+    return
+  }
+  if (!datos || forzar) {
+    if (!cargando) {
+      root().innerHTML = '<div class="rs"><div class="rs-panel rs-empty"><span class="spin rs-spin"></span> Cargando resultados…</div></div>'
+      cargando = cargarDatos()
+        .then((d) => { datos = d; actualizadoEn = new Date() })
+        .catch((e) => {
+          root().innerHTML = `<div class="rs"><div class="rs-panel rs-empty">No se pudieron cargar los resultados: ${esc((e as Error).message)}<br><button class="rs-btn" id="rs-reintentar">Reintentar</button></div></div>`
+          document.getElementById('rs-reintentar')?.addEventListener('click', () => abrirResultados(true))
+        })
+        .finally(() => { cargando = null })
+    }
+    await cargando
+    if (!datos) return
+  }
+  alcance = calcularAlcance(estado.usuario, datos.cat, siteParam())
+  if (alcance.codigos) f.asoc = ''
+  render()
+}
+
+/* ══ Filtrado ══ */
+
+function rango(): { desde: string; hasta: string } {
+  const hasta = f.periodo === 'rango' && f.hasta ? f.hasta : hoyISO()
+  if (f.periodo === 'todo') return { desde: '0000-00-00', hasta }
+  if (f.periodo === 'rango') return { desde: f.desde || '0000-00-00', hasta }
+  const d = aFecha(hasta); d.setMonth(d.getMonth() - parseInt(f.periodo))
+  return { desde: d.toISOString().slice(0, 10), hasta }
+}
+function rangoAnterior(): { desde: string; hasta: string } | null {
+  if (f.periodo === 'todo') return null
+  const r = rango()
+  if (r.desde === '0000-00-00') return null
+  const a = aFecha(r.desde), b = aFecha(r.hasta), dur = b.getTime() - a.getTime()
+  const h = new Date(a.getTime() - 864e5), d = new Date(h.getTime() - dur)
+  return { desde: d.toISOString().slice(0, 10), hasta: h.toISOString().slice(0, 10) }
+}
+const enRango = (x: Fila, r: { desde: string; hasta: string }) => x.fecha >= r.desde && x.fecha <= r.hasta
+
+/** Filas que esta cuenta puede ver, con el filtro de asociado aplicado (sin filtro de fechas). */
+function filasVisibles(): Fila[] {
+  if (!datos) return []
+  let fs = datos.filas
+  if (alcance.codigos) fs = fs.filter((x) => alcance.codigos!.has(x.asociado))
+  else if (f.asoc) { const c = codigosDeFiltro(datos.cat, f.asoc); fs = fs.filter((x) => c.has(x.asociado)) }
+  return fs
+}
+const vista = (g: string) => datos?.cat.vista[g.toUpperCase()] || g
+const nombreAsoc = (c: string) => datos?.cat.asociados.find((a) => a.Title === c)?.Nombre || c
+
+/* ══ Render principal ══ */
+
+function render() {
+  if (!datos) return
+  guardarFiltros()
+  const vis = filasVisibles()
+  const r = rango()
+  const cur = vis.filter((x) => enRango(x, r))
+  const red = stats(datos.filas.filter((x) => enRango(x, r)))
+  const granjas = [...new Set(vis.map((x) => x.granja))].sort((a, b) => vista(a).localeCompare(vista(b), 'es'))
+  if (!granjas.includes(f.granja)) { f.granja = granjas[0] || ''; f.lote = '' }
+
+  const asocs = [...new Set(datos.filas.map((x) => x.asociado).filter(Boolean))].sort()
+  const titulo = alcance.codigos
+    ? `${esc(nombreAsoc(alcance.principal || ''))}${alcance.vistaPrevia ? ' <span class="rs-tag">vista previa de administrador</span>' : ''}`
+    : f.asoc ? esc(nombreAsoc(f.asoc)) : 'Todos los asociados'
+  const lotesGranja = [...new Set(vis.filter((x) => x.granja === f.granja && enRango(x, r)).map((x) => x.consec))].sort().reverse()
+  if (f.lote && !lotesGranja.includes(f.lote)) f.lote = ''
+
+  root().innerHTML = `<div class="rs">
+    <div class="rs-top">
+      <div><div class="rs-eyebrow">Score Pulmonar · Método Madec</div><h2>${titulo}</h2>
+        <div class="rs-muted">${actualizadoEn ? 'Actualizado ' + actualizadoEn.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' }) : ''} · ${vis.length.toLocaleString('es-CO')} cerdos en total</div></div>
+      <div class="rs-actions">
+        ${alcance.tuHub ? `<a class="rs-btn rs-btn-g" href="${esc(alcance.tuHub)}" target="_blank" rel="noopener">🏠 Abrir Tu.HUB</a>` : ''}
+        <button class="rs-btn" id="rs-act">⟳ Actualizar</button>
+        <button class="rs-btn" id="rs-xls">Excel</button>
+        <button class="rs-btn" id="rs-pdf">PDF</button>
+      </div>
+    </div>
+    <div class="rs-filtros">
+      ${alcance.codigos ? '' : `<label>Asociado<select id="rs-asoc"><option value="">Todos</option>${asocs.map((a) => `<option value="${esc(a)}" ${a === f.asoc ? 'selected' : ''}>${esc(nombreAsoc(a))}</option>`).join('')}</select></label>`}
+      <label>Periodo<select id="rs-per">${[['3', 'Últimos 3 meses'], ['6', 'Últimos 6 meses'], ['12', 'Últimos 12 meses'], ['todo', 'Todo el historial'], ['rango', 'Rango de fechas']].map(([v, t]) => `<option value="${v}" ${v === f.periodo ? 'selected' : ''}>${t}</option>`).join('')}</select></label>
+      ${f.periodo === 'rango' ? `<label>Desde<input type="date" id="rs-desde" value="${esc(f.desde)}"></label><label>Hasta<input type="date" id="rs-hasta" value="${esc(f.hasta)}"></label>` : ''}
+      ${f.tab === 'gra' ? `<label>Granja<select id="rs-granja">${granjas.map((g) => `<option value="${esc(g)}" ${g === f.granja ? 'selected' : ''}>${esc(vista(g))}</option>`).join('')}</select></label>
+        <label>Lote<select id="rs-lote"><option value="">Todos los lotes</option>${lotesGranja.map((c) => `<option ${c === f.lote ? 'selected' : ''}>${esc(c)}</option>`).join('')}</select></label>` : ''}
+      ${f.tab === 'com' ? `<label>Indicador<select id="rs-ind">${INDICADORES.map((i) => `<option value="${i.key}" ${i.key === f.ind ? 'selected' : ''}>${i.lbl}</option>`).join('')}</select></label>` : ''}
+    </div>
+    <div class="rs-tabs" role="tablist">
+      ${([['res', 'Resumen'], ['gra', 'Granja y lotes'], ['com', 'Comparativo']] as const).map(([k, t]) => `<button role="tab" data-tab="${k}" aria-selected="${f.tab === k}">${t}</button>`).join('')}
+    </div>
+    <div class="rs-impreso">${esc(textoFiltros(r))}</div>
+    <div id="rs-vista"></div>
+  </div>`
+
+  const cont = document.getElementById('rs-vista')!
+  if (f.tab === 'res') cont.innerHTML = vistaResumen(vis, cur, red)
+  else if (f.tab === 'gra') cont.innerHTML = vistaGranja(vis, r, red)
+  else cont.innerHTML = vistaComparativo(cur, red)
+  enlazar()
+}
+
+function textoFiltros(r: { desde: string; hasta: string }) {
+  const per = f.periodo === 'todo' ? 'Todo el historial' : `${r.desde} a ${r.hasta}`
+  const g = f.tab === 'gra' ? ` · Granja: ${vista(f.granja)}${f.lote ? ' · Lote ' + f.lote : ''}` : ''
+  return `Periodo: ${per}${g}`
+}
+
+function enlazar() {
+  const on = (id: string, ev: string, fn: (e: Event) => void) => document.getElementById(id)?.addEventListener(ev, fn)
+  const val = (e: Event) => (e.target as HTMLInputElement).value
+  on('rs-asoc', 'change', (e) => { f.asoc = val(e); render() })
+  on('rs-per', 'change', (e) => { f.periodo = val(e); if (f.periodo === 'rango' && !f.hasta) { const r = rango(); f.desde = r.desde; f.hasta = hoyISO() } render() })
+  on('rs-desde', 'change', (e) => { f.desde = val(e); render() })
+  on('rs-hasta', 'change', (e) => { f.hasta = val(e); render() })
+  on('rs-granja', 'change', (e) => { f.granja = val(e); f.lote = ''; render() })
+  on('rs-lote', 'change', (e) => { f.lote = val(e); render() })
+  on('rs-ind', 'change', (e) => { f.ind = val(e); render() })
+  on('rs-act', 'click', () => abrirResultados(true))
+  on('rs-xls', 'click', exportarExcel)
+  on('rs-pdf', 'click', exportarPDF)
+  document.querySelectorAll<HTMLButtonElement>('.rs-tabs button').forEach((b) => b.addEventListener('click', () => { f.tab = b.dataset.tab as Tab; render(); window.scrollTo({ top: 0 }) }))
+  document.querySelectorAll<HTMLElement>('[data-go]').forEach((el) => {
+    const go = () => { f.granja = el.dataset.go!; f.lote = el.dataset.lote || ''; f.tab = 'gra'; render(); window.scrollTo({ top: 0 }) }
+    el.addEventListener('click', go)
+    el.addEventListener('keydown', (e) => { if ((e as KeyboardEvent).key === 'Enter') go() })
+  })
+  document.querySelectorAll<HTMLButtonElement>('[data-nivel]').forEach((b) => b.addEventListener('click', () => { f.nivelTabla = b.dataset.nivel as 'granja' | 'lote'; render() }))
+}
+
+/* ══ Vista: Resumen ══ */
+
+function kpi(lbl: string, valor: string, ref: string, extra = '', hero = false) {
+  return `<div class="rs-kpi${hero ? ' hero' : ''}"><div class="l">${lbl}</div><div class="v">${valor}</div>${extra}<div class="ref">${ref}</div></div>`
+}
+
+function vistaResumen(vis: Fila[], cur: Fila[], red: Stats) {
+  const s = stats(cur)
+  if (!s.n) return '<div class="rs-panel rs-empty">No hay inspecciones en este periodo. Pruebe con un periodo más largo.</div>'
+  const ra = rangoAnterior()
+  let delta = ''
+  if (ra) {
+    const sp = stats(vis.filter((x) => enRango(x, ra)))
+    if (sp.n) {
+      const d = s.idn - sp.idn
+      const cls = Math.abs(d) < 0.02 ? 'flat' : d < 0 ? 'good' : 'bad'
+      delta = `<div class="rs-delta ${cls}">${d < 0 ? '▼' : d > 0 ? '▲' : '■'} ${fmt(Math.abs(d))} vs periodo anterior</div>`
+    }
+  }
+  const granjasN = new Set(cur.map((x) => x.granja)).size
+  const kpis = [
+    kpi('IDN del periodo', fmt(s.idn), `Red Cercafe: ${fmt(red.idn)}`, `<div>${pill(s.idn)}</div>${delta}`, true),
+    kpi('Cerdos inspeccionados', s.n.toLocaleString('es-CO'), `${s.lotes} lotes · ${granjasN} granja${granjasN === 1 ? '' : 's'}`),
+    kpi('Consolidación', fmt(s.consol) + ' %', `Red Cercafe: ${fmt(red.consol)} %`),
+    kpi('Neumonía', fmt(s.neum, 1) + ' %', `Red Cercafe: ${fmt(red.neum, 1)} %`),
+    kpi('Pleuritis', fmt(s.pleur, 1) + ' %', `Red Cercafe: ${fmt(red.pleur, 1)} %`),
+    kpi('Poliserositis', fmt(s.poliser, 1) + ' %', `Red Cercafe: ${fmt(red.poliser, 1)} %`),
+    kpi('Pérdidas GDP', fmt(s.gdp, 1) + ' kg', 'Suma estimada del periodo'),
+  ].join('')
+
+  const mini = (lbl: string, k: keyof Stats) => `<div class="rs-mini"><div class="l">${lbl}</div><b>${fmt(s[k] as number, 1)} %</b><span>Red ${fmt(red[k] as number, 1)} %</span></div>`
+  const otras = `<div class="rs-panel"><h3>Otras lesiones y artefactos</h3><p class="rs-sub">Artefactos medidos sobre cerdos sin ninguna lesión.</p>
+    <div class="rs-minis">${mini('Neumonía intersticial', 'nint')}${mini('Absceso', 'absc')}${mini('Nódulo', 'nodu')}${mini('Pericarditis', 'peri')}${mini('Manchas de leche', 'manc')}${mini('Artefacto agua', 'agua')}${mini('Artefacto sangre', 'sang')}${mini('Petequias', 'pete')}${mini('Ambos artefactos', 'ambos')}</div></div>`
+
+  // Tabla de granjas
+  const verAsoc = !alcance.codigos && !f.asoc
+  const hoy = new Date()
+  const filasG = [...new Set(cur.map((x) => x.granja))].map((g) => {
+    const fg = cur.filter((x) => x.granja === g)
+    const sg = stats(fg)
+    const ult = fg.reduce((m, x) => (x.fecha > m ? x.fecha : m), '')
+    const serie: (number | null)[] = []
+    for (let i = 11; i >= 0; i--) {
+      const a = new Date(hoy.getFullYear(), hoy.getMonth() - i, 1), b = new Date(hoy.getFullYear(), hoy.getMonth() - i + 1, 1)
+      const ai = a.toISOString().slice(0, 10), bi = b.toISOString().slice(0, 10)
+      const fm = vis.filter((x) => x.granja === g && x.fecha >= ai && x.fecha < bi)
+      serie.push(fm.length ? stats(fm).idn : null)
+    }
+    return { g, sg, ult, serie, asoc: fg[0]?.asociado || '' }
+  }).sort((a, b) => b.sg.idn - a.sg.idn)
+  const tabla = `<div class="rs-panel"><h3>Granjas</h3><p class="rs-sub">De mayor a menor IDN en el periodo. Toque una granja para ver sus lotes.</p>
+    <div class="rs-scroll"><table class="rs-table"><thead><tr><th>Granja</th><th>IDN</th><th>Tendencia 12 m</th><th class="n">Lotes</th><th class="n">Cerdos</th><th class="n">Pleuritis</th><th>Último lote</th></tr></thead><tbody>
+    ${filasG.map((r) => `<tr tabindex="0" data-go="${esc(r.g)}"><td><div class="nm">${esc(vista(r.g))}</div>${verAsoc ? `<div class="rs-muted">${esc(nombreAsoc(r.asoc))}</div>` : ''}</td><td>${pill(r.sg.idn)}</td><td>${spark(r.serie)}</td><td class="n">${r.sg.lotes}</td><td class="n">${r.sg.n}</td><td class="n">${fmt(r.sg.pleur, 1)} %</td><td>${esc(r.ult)}</td></tr>`).join('')}
+    </tbody></table></div></div>`
+
+  // Lotes para revisar (últimos 60 días, moderado o severo)
+  const lim = new Date(); lim.setDate(lim.getDate() - 60)
+  const limI = lim.toISOString().slice(0, 10)
+  const porLote = new Map<string, Fila[]>()
+  vis.filter((x) => x.fecha >= limI).forEach((x) => { const k = x.granja + '|' + x.consec; porLote.set(k, [...(porLote.get(k) || []), x]) })
+  const alertas = [...porLote.values()].map((fs) => ({ fs, s: stats(fs) })).filter((a) => a.s.idn >= 0.56).sort((a, b) => b.s.idn - a.s.idn).slice(0, 8)
+  const alertasHtml = `<div class="rs-panel"><h3>Lotes para revisar</h3><p class="rs-sub">Últimos 60 días con IDN moderado o severo.</p><div class="rs-alerts">
+    ${alertas.length ? alertas.map((a) => { const k = nivelIdn(a.s.idn), x = a.fs[0]; return `<button type="button" class="rs-alert" data-go="${esc(x.granja)}" data-lote="${esc(x.consec)}"><span class="rs-pill rs-${k}"><i></i>${NIVEL_TXT[k]}</span><span><b>${esc(vista(x.granja))} · lote ${esc(x.consec)}</b><br><span class="rs-muted">${esc(x.fecha)} · ${a.s.n} cerdos · pleuritis ${fmt(a.s.pleur, 0)} %</span></span><b class="val">${fmt(a.s.idn)}</b></button>` }).join('')
+      : '<div class="rs-empty">Ningún lote moderado o severo en los últimos 60 días.</div>'}</div></div>`
+
+  return `<div class="rs-kpis">${kpis}</div><div class="rs-grid2">${tabla}<div class="rs-col">${alertasHtml}</div></div>${otras}`
+}
+
+/* ══ Vista: Granja y lotes ══ */
+
+function vistaGranja(vis: Fila[], r: { desde: string; hasta: string }, red: Stats) {
+  if (!f.granja) return '<div class="rs-panel rs-empty">No hay granjas con datos.</div>'
+  const deGranja = vis.filter((x) => x.granja === f.granja && enRango(x, r))
+  const sel = f.lote ? deGranja.filter((x) => x.consec === f.lote) : deGranja
+  const s = stats(sel)
+  const porLote = new Map<string, Fila[]>()
+  deGranja.forEach((x) => porLote.set(x.consec, [...(porLote.get(x.consec) || []), x]))
+  const lotes: PuntoLote[] = [...porLote.entries()].map(([consec, fs]) => {
+    const fecha = fs.reduce((m, x) => (x.fecha && x.fecha < m ? x.fecha : m), fs[0].fecha || r.hasta)
+    return { consec, fecha: aFecha(fecha || r.hasta), s: stats(fs) }
+  })
+  const desde = r.desde === '0000-00-00' ? (lotes.length ? new Date(Math.min(...lotes.map((l) => l.fecha.getTime())) - 15 * 864e5) : aFecha(r.hasta)) : aFecha(r.desde)
+  const an = analisis(s)
+  const mp = mapaPulmonar(s)
+  const asoc = deGranja[0]?.asociado || datos?.cat.asociadoDe[f.granja.toUpperCase()] || ''
+  if (!s.n) return `<div class="rs-panel"><div class="rs-farm"><div><div class="rs-muted">${esc(nombreAsoc(asoc))}</div><h2>${esc(vista(f.granja))}</h2></div></div><div class="rs-empty">Sin inspecciones de esta granja en el periodo.</div></div>`
+  const k = nivelIdn(s.idn)
+  return `
+  <div class="rs-panel"><div class="rs-farm">
+    <div><div class="rs-muted">${esc(nombreAsoc(asoc))}${f.lote ? ' · Lote ' + esc(f.lote) : ''}</div><h2>${esc(vista(f.granja))}</h2></div>
+    <div class="rs-farm-stats"><div>IDN<b>${fmt(s.idn)}</b></div><div>Estado<span>${pill(s.idn)}</span></div><div>Lotes<b>${s.lotes}</b></div><div>Cerdos<b>${s.n}</b></div><div>Neumonía<b>${fmt(s.neum, 1)} %</b></div><div>Pleuritis<b>${fmt(s.pleur, 1)} %</b></div><div>Red Cercafe<b>${fmt(red.idn)}</b></div></div>
+  </div></div>
+  <div class="rs-panel"><h3>Análisis de resultados</h3>
+    <div class="rs-grid2 rs-analisis">
+      <table class="rs-table rs-kv"><tbody>
+        <tr><td>IDN</td><td>${fmt(s.idn)} — <b class="rs-t-${k}">${NIVEL_TXT[k]}</b></td></tr>
+        <tr><td>% Consolidación</td><td>${fmt(s.consol)} % — ${an.consol}</td></tr>
+        <tr><td>Frec. neumonía</td><td>${an.neum}</td></tr>
+        <tr><td>Pleuritis</td><td>${an.pleur}</td></tr>
+        <tr><td>Poliserositis</td><td>${fmt(s.poliser, 1)} %</td></tr>
+        <tr><td>Pérdidas GDP</td><td>${fmt(s.gdp, 1)} kg estimados en pérdida de ganancia diaria de peso</td></tr>
+      </tbody></table>
+      <div class="rs-reco rs-b-${k}"><div class="rs-eyebrow">Recomendación</div><p>${an.recomendacion}</p>
+        <div class="rs-muted">Escala IDN: Sin lesión = 0 · Leve &lt; 0,56 · Moderado 0,56–0,89 · Severo &gt; 0,89</div></div>
+    </div>
+  </div>
+  <div class="rs-panel"><h3>IDN por lote</h3><p class="rs-sub">Cada punto es un consecutivo. Líneas guía: 0,56 moderado y 0,90 severo; la punteada verde es la red Cercafe.</p>${graficaLotes(lotes, desde, aFecha(r.hasta), red.idn)}</div>
+  <div class="rs-grid2e">
+    <div class="rs-panel"><h3>Mapa pulmonar</h3><p class="rs-sub">Consolidación promedio por lóbulo${f.lote ? ' del lote' : ''}.</p>
+      <div class="rs-lung"><div>${mp.svg}</div><div class="rs-lobes">${mp.lista}</div></div>
+      <div class="rs-legend">${mp.leyenda}</div><div class="rs-callout"><b>Lectura:</b> ${mp.lectura}</div></div>
+    <div class="rs-panel"><h3>Cerdos por categoría Madec</h3><p class="rs-sub">0 = sin consolidación · 6 = más de 50 %.</p>${graficaCategorias(s)}
+      <h3 style="margin-top:14px">Severidad individual</h3><p class="rs-sub">Escala distinta al IDN: por % de consolidación de cada cerdo.</p>
+      ${barrasSeveridad([{ nombre: f.lote ? 'Lote ' + f.lote : vista(f.granja), valor: 0, s }])}${leyendaSev()}</div>
+  </div>
+  <div class="rs-panel"><h3>Lotes</h3><div class="rs-scroll"><table class="rs-table"><thead><tr><th>Consecutivo</th><th>Fecha</th><th class="n">Cerdos</th><th>IDN</th><th class="n">Consolidación</th><th class="n">Neumonía</th><th class="n">Pleuritis</th><th class="n">GDP (kg)</th></tr></thead><tbody>
+    ${[...lotes].sort((a, b) => b.fecha.getTime() - a.fecha.getTime()).map((l) => `<tr tabindex="0" class="${l.consec === f.lote ? 'sel' : ''}" data-go="${esc(f.granja)}" data-lote="${l.consec === f.lote ? '' : esc(l.consec)}"><td>${esc(l.consec)}</td><td>${l.fecha.toISOString().slice(0, 10)}</td><td class="n">${l.s.n}</td><td>${pill(l.s.idn)}</td><td class="n">${fmt(l.s.consol)} %</td><td class="n">${fmt(l.s.neum, 1)} %</td><td class="n">${fmt(l.s.pleur, 1)} %</td><td class="n">${fmt(l.s.gdp, 1)}</td></tr>`).join('')}
+  </tbody></table></div><p class="rs-sub" style="margin-top:8px">Toque un lote para ver solo ese lote; tóquelo de nuevo para volver a todos.</p></div>`
+}
+
+const leyendaSev = () => `<div class="rs-legend">${[['--rs-sin', 'Sin 0 %'], ['--rs-leve', 'Leve ≤ 10 %'], ['--rs-mod', 'Moderada 10–30 %'], ['--rs-sev', 'Severa > 30 %']].map(([c, t]) => `<span><i style="background:var(${c})"></i>${t}</span>`).join('')}</div>`
+
+/* ══ Vista: Comparativo ══ */
+
+function porGranja(cur: Fila[]) {
+  const m = new Map<string, Fila[]>()
+  cur.forEach((x) => m.set(x.granja, [...(m.get(x.granja) || []), x]))
+  return [...m.entries()].map(([g, fs]) => ({ g, s: stats(fs) }))
+}
+
+function vistaComparativo(cur: Fila[], red: Stats) {
+  const ind = INDICADORES.find((i) => i.key === f.ind) || INDICADORES[0]
+  const pg = porGranja(cur)
+  if (!pg.length) return '<div class="rs-panel rs-empty">No hay inspecciones en este periodo.</div>'
+  const filas: FilaComp[] = pg.map((x) => ({ nombre: vista(x.g), valor: x.s[ind.key] as number, s: x.s })).sort((a, b) => b.valor - a.valor)
+  const esIdn = ind.key === 'idn'
+  const ref = ind.key === 'gdp' ? null : (red[ind.key] as number)
+  const sevFilas: FilaComp[] = pg.map((x) => ({ nombre: vista(x.g), valor: x.s.sev[0] / (x.s.n || 1), s: x.s })).sort((a, b) => a.valor - b.valor)
+  const leyIdn = esIdn ? `<div class="rs-legend">${(['sin', 'leve', 'mod', 'sev'] as const).map((k) => `<span class="rs-pill rs-${k}"><i></i>${NIVEL_TXT[k]}</span>`).join('')}${ref != null ? `<span>┆ Red Cercafe ${ind.fmt(ref)}</span>` : ''}</div>`
+    : ref != null ? `<div class="rs-legend"><span>┆ Red Cercafe ${ind.fmt(ref)}</span></div>` : ''
+  return `<div class="rs-grid2e">
+    <div class="rs-panel"><h3>${ind.lbl} por granja</h3><p class="rs-sub">${esIdn ? 'Color según la escala IDN.' : 'De mayor a menor.'} Línea punteada: red Cercafe.</p>${barrasGranjas(filas, esIdn, ind.fmt, ref)}${leyIdn}</div>
+    <div class="rs-panel"><h3>Severidad individual</h3><p class="rs-sub">Clasificación de cada cerdo por su % de consolidación (escala distinta al IDN).</p>${barrasSeveridad(sevFilas)}${leyendaSev()}</div>
+  </div>
+  <div class="rs-panel"><div class="rs-tabla-hdr"><h3>Resultados por tabla</h3>
+    <div class="rs-seg"><button data-nivel="granja" class="${f.nivelTabla === 'granja' ? 'on' : ''}">Por granja</button><button data-nivel="lote" class="${f.nivelTabla === 'lote' ? 'on' : ''}">Por lote</button></div></div>
+    <div class="rs-scroll">${tablaIndicadores(cur)}</div>
+    <p class="rs-sub" style="margin-top:8px">El botón Excel exporta esta tabla con los 15 indicadores.</p></div>`
+}
+
+function filasTabla(cur: Fila[]) {
+  if (f.nivelTabla === 'granja') {
+    return porGranja(cur).sort((a, b) => vista(a.g).localeCompare(vista(b.g), 'es'))
+      .map((x) => ({ cols: { Granja: vista(x.g), Asociado: nombreAsoc(x.s.n ? cur.find((c) => c.granja === x.g)!.asociado : '') } as Record<string, string>, s: x.s }))
+  }
+  const m = new Map<string, Fila[]>()
+  cur.forEach((x) => { const k = x.granja + '|' + x.consec; m.set(k, [...(m.get(k) || []), x]) })
+  return [...m.values()].map((fs) => ({ cols: { Granja: vista(fs[0].granja), Lote: fs[0].consec, Fecha: fs.reduce((a, x) => (x.fecha < a ? x.fecha : a), fs[0].fecha) } as Record<string, string>, s: stats(fs) }))
+    .sort((a, b) => a.cols.Granja.localeCompare(b.cols.Granja, 'es') || b.cols.Fecha.localeCompare(a.cols.Fecha))
+}
+
+function tablaIndicadores(cur: Fila[]) {
+  const filas = filasTabla(cur)
+  if (!filas.length) return ''
+  const claves = Object.keys(filas[0].cols)
+  return `<table class="rs-table rs-wide"><thead><tr>${claves.map((c) => `<th>${c}</th>`).join('')}<th class="n">Cerdos</th>${INDICADORES.map((i) => `<th class="n">${i.lbl}</th>`).join('')}</tr></thead><tbody>
+    ${filas.map((r) => `<tr>${claves.map((c) => `<td>${esc(r.cols[c])}</td>`).join('')}<td class="n">${r.s.n}</td>${INDICADORES.map((i) => `<td class="n">${i.key === 'idn' ? pill(r.s.idn) : i.fmt(r.s[i.key] as number)}</td>`).join('')}</tr>`).join('')}
+  </tbody></table>`
+}
+
+/* ══ Exportar ══ */
+
+let xlsxCargando: Promise<void> | null = null
+function cargarXLSX(): Promise<void> {
+  if ((window as unknown as { XLSX?: unknown }).XLSX) return Promise.resolve()
+  xlsxCargando = xlsxCargando || new Promise((res, rej) => {
+    const s = document.createElement('script')
+    s.src = 'https://unpkg.com/xlsx@0.18.5/dist/xlsx.full.min.js'
+    s.onload = () => res()
+    s.onerror = () => { xlsxCargando = null; rej(new Error('No se pudo cargar la librería de Excel (¿sin conexión?)')) }
+    document.head.append(s)
+  })
+  return xlsxCargando
+}
+
+async function exportarExcel() {
+  if (!datos) return
+  try {
+    await cargarXLSX()
+    const r = rango()
+    const cur = filasVisibles().filter((x) => enRango(x, r))
+    const filas = filasTabla(cur).map((x) => {
+      const o: Record<string, string | number> = { ...x.cols, Cerdos: x.s.n }
+      INDICADORES.forEach((i) => (o[i.lbl] = Math.round((x.s[i.key] as number) * 10000) / 10000))
+      o['Nivel IDN'] = NIVEL_TXT[nivelIdn(x.s.idn)]
+      return o
+    })
+    const X = (window as unknown as { XLSX: any }).XLSX
+    const ws = X.utils.json_to_sheet(filas)
+    const wb = X.utils.book_new()
+    X.utils.book_append_sheet(wb, ws, f.nivelTabla === 'granja' ? 'Por granja' : 'Por lote')
+    X.writeFile(wb, `ScorePulmonar_${f.nivelTabla === 'granja' ? 'granjas' : 'lotes'}_${r.hasta}.xlsx`)
+  } catch (e) {
+    showToast((e as Error).message, 'err', 6000)
+  }
+}
+
+function exportarPDF() {
+  const titulo = document.title
+  const nombre = f.tab === 'gra' ? vista(f.granja) + (f.lote ? ' lote ' + f.lote : '') : alcance.principal ? nombreAsoc(alcance.principal) : f.asoc ? nombreAsoc(f.asoc) : 'Red Cercafe'
+  document.title = `Score Pulmonar - ${nombre} - ${hoyISO()}`
+  document.body.classList.add('rs-imprimiendo')
+  const limpiar = () => { document.title = titulo; document.body.classList.remove('rs-imprimiendo'); window.removeEventListener('afterprint', limpiar) }
+  window.addEventListener('afterprint', limpiar)
+  setTimeout(() => window.print(), 50)
+}
+
+/* ══ Tooltip ══ */
+
+let tipListo = false
+function iniciarTooltip() {
+  if (tipListo) return
+  tipListo = true
+  const tip = document.createElement('div')
+  tip.id = 'rs-tip'
+  tip.hidden = true
+  document.body.append(tip)
+  document.addEventListener('mousemove', (e) => {
+    const t = (e.target as Element).closest?.('[data-tip]')
+    if (!t) { tip.hidden = true; return }
+    tip.innerHTML = t.getAttribute('data-tip') || ''
+    tip.hidden = false
+    const w = tip.offsetWidth, h = tip.offsetHeight
+    let x = e.clientX + 14, y = e.clientY + 14
+    if (x + w > innerWidth - 8) x = e.clientX - w - 14
+    if (y + h > innerHeight - 8) y = e.clientY - h - 14
+    tip.style.left = x + 'px'
+    tip.style.top = y + 'px'
+  })
+}
