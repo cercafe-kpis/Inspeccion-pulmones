@@ -27,8 +27,11 @@ async function doLogin() {
   }
 }
 
-function doLogout() {
-  if (!logout()) {
+async function doLogout() {
+  if (!(await logout())) {
+    estado.usuario = null
+    try { localStorage.removeItem('insp_pulmones_usuario') } catch { /* nada */ }
+    document.getElementById('login-acceso')!.style.display = 'none'
     document.getElementById('s-login')!.style.display = 'flex'
     document.getElementById('app')!.style.display = 'none'
   }

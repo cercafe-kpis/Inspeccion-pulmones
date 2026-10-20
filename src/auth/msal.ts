@@ -28,19 +28,45 @@ export function crearMsalApp(): PublicClientApplication {
   return msalApp
 }
 
-/** Login manual (botón "Iniciar sesión con Microsoft"). Devuelve la cuenta. */
-export async function loginPopup(): Promise<AccountInfo> {
+/** ¿La app está dentro de otra página (web part "Insertar" de SharePoint / Tu.HUB)? */
+export function enIframe(): boolean {
+  try { return window.self !== window.top } catch { return true }
+}
+
+/**
+ * MSAL deja una marca "interacción en curso" mientras hay un popup o redirect abierto. Si ese popup
+ * se cerró mal (o un cierre de sesión no pudo terminar dentro de SharePoint), la marca queda pegada y
+ * el siguiente login falla con "interaction_in_progress". Se borra antes de cada login manual.
+ */
+function limpiarInteraccionPegada() {
+  for (const st of [sessionStorage, localStorage]) {
+    try {
+      Object.keys(st).filter((k) => k.includes('interaction.status')).forEach((k) => st.removeItem(k))
+    } catch { /* almacenamiento bloqueado */ }
+  }
+}
+
+/** initialize + procesar cualquier respuesta de redirect pendiente (cierra interacciones a medias). */
+async function listo(): Promise<PublicClientApplication> {
   const app = crearMsalApp()
   await app.initialize()
-  const r = await app.loginPopup({ scopes: SCOPES_LOGIN })
+  await app.handleRedirectPromise().catch((e) => console.warn('handleRedirectPromise:', (e as Error)?.message))
+  return app
+}
+
+/** Login manual (botón "Iniciar sesión con Microsoft"). Devuelve la cuenta. */
+export async function loginPopup(): Promise<AccountInfo> {
+  const app = await listo()
+  limpiarInteraccionPegada()
+  // Dentro de SharePoint siempre se deja escoger la cuenta (para poder cambiar de usuario después de "Salir").
+  const r = await app.loginPopup({ scopes: SCOPES_LOGIN, prompt: enIframe() ? 'select_account' : undefined })
   return r.account as AccountInfo
 }
 
 /** Al abrir la app: devuelve la cuenta ya guardada (sin pedir login) o null. */
 export async function restaurarCuenta(): Promise<AccountInfo | null> {
   try {
-    const app = crearMsalApp()
-    await app.initialize()
+    const app = await listo()
     const cuentas = app.getAllAccounts()
     return cuentas.length > 0 ? cuentas[0] : null
   } catch (e) {
@@ -70,6 +96,7 @@ export async function getToken(silencioso?: boolean): Promise<string | null> {
       throw errTipo('La sesión de Microsoft venció — toque la barra azul para iniciar sesión', 'auth')
     }
     try {
+      limpiarInteraccionPegada()
       const r = await msalApp.acquireTokenPopup({ scopes: SCOPES_GRAPH })
       return r.accessToken
     } catch (e2) {
@@ -87,9 +114,25 @@ export function haySesionMicrosoft(): boolean {
   }
 }
 
-/** Cierra la sesión de Microsoft. Devuelve false si no había MSAL (el llamador muestra el login). */
-export function logout(): boolean {
+/**
+ * Cierra la sesión.
+ *  - App abierta directamente (celular / pestaña propia): cierre normal de Microsoft (redirect), como antes.
+ *  - Dentro de SharePoint (iframe): la página de Microsoft no se deja mostrar dentro de otra página, así que
+ *    solo se borra la sesión guardada en este navegador y se vuelve a la pantalla de login (sin navegar).
+ * Devuelve false cuando el llamador debe mostrar el login él mismo.
+ */
+export async function logout(): Promise<boolean> {
   if (!msalApp) return false
-  msalApp.logout()
+  limpiarInteraccionPegada()
+  if (enIframe()) {
+    try {
+      await msalApp.logoutRedirect({ onRedirectNavigate: () => false })
+    } catch (e) {
+      console.warn('logout local:', (e as Error)?.message)
+    }
+    limpiarInteraccionPegada()
+    return false
+  }
+  await msalApp.logoutRedirect()
   return true
 }
