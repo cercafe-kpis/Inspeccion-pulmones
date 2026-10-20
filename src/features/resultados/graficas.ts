@@ -67,16 +67,16 @@ export function graficaLotes(lotes: PuntoLote[], desde: Date, hasta: Date, red: 
 const BINS = [1, 3, 6, 10]
 const binOf = (v: number) => (v < BINS[0] ? 1 : v < BINS[1] ? 2 : v < BINS[2] ? 3 : v < BINS[3] ? 4 : 5)
 const LUNG: Record<string, string> = {
-  apical_derecho: 'M100,22 C76,24 64,50 64,82 L132,82 C134,56 124,24 100,22 Z',
-  cardiaco_derecho: 'M63,86 C59,106 53,124 49,140 L136,140 C136,120 134,100 132,86 Z',
-  diafragmatico_derecho: 'M48,144 C40,182 40,222 62,240 C92,252 126,236 142,214 L137,144 Z',
-  apical_izquierdo: 'M220,22 C244,24 256,50 256,82 L188,82 C186,56 196,24 220,22 Z',
-  cardiaco_izquierdo: 'M257,86 C261,106 267,124 271,140 L184,140 C184,120 186,100 188,86 Z',
-  diafragmatico_izquierdo: 'M272,144 C280,182 280,222 258,240 C228,252 194,236 178,214 L183,144 Z',
+  apical_izquierdo: 'M100,22 C76,24 64,50 64,82 L132,82 C134,56 124,24 100,22 Z',
+  cardiaco_izquierdo: 'M63,86 C59,106 53,124 49,140 L136,140 C136,120 134,100 132,86 Z',
+  diafragmatico_izquierdo: 'M48,144 C40,182 40,222 62,240 C92,252 126,236 142,214 L137,144 Z',
+  apical_derecho: 'M220,22 C244,24 256,50 256,82 L188,82 C186,56 196,24 220,22 Z',
+  cardiaco_derecho: 'M257,86 C261,106 267,124 271,140 L184,140 C184,120 186,100 188,86 Z',
+  diafragmatico_derecho: 'M272,144 C280,182 280,222 258,240 C228,252 194,236 178,214 L183,144 Z',
 }
 const LBL: Record<string, [number, number]> = {
-  apical_derecho: [98, 58], cardiaco_derecho: [94, 116], diafragmatico_derecho: [92, 196],
-  apical_izquierdo: [222, 58], cardiaco_izquierdo: [226, 116], diafragmatico_izquierdo: [228, 196], accesorio: [160, 200],
+  apical_izquierdo: [98, 58], cardiaco_izquierdo: [94, 116], diafragmatico_izquierdo: [92, 196],
+  apical_derecho: [222, 58], cardiaco_derecho: [226, 116], diafragmatico_derecho: [228, 196], accesorio: [160, 200],
 }
 const NOMBRE_LOB = (id: string) => {
   const l = LOBULOS.find((x) => x.id === id)!
@@ -95,7 +95,7 @@ export function mapaPulmonar(s: Stats) {
     const [lx, ly] = LBL[k]
     return geo + `<text x="${lx}" y="${ly + 4}" text-anchor="middle" font-size="${k === 'accesorio' ? 10 : 12}" font-weight="600" fill="${ink}" pointer-events="none">${fmt(v, 1)}</text>`
   }
-  const svg = `<svg viewBox="0 0 320 262" width="100%" style="max-width:360px" role="img" aria-label="Consolidación promedio por lóbulo">${Object.keys(LUNG).map(forma).join('')}${forma('accesorio')}<text x="96" y="258" text-anchor="middle" font-size="11" fill="var(--hint)">Pulmón derecho</text><text x="224" y="258" text-anchor="middle" font-size="11" fill="var(--hint)">Pulmón izquierdo</text></svg>`
+  const svg = `<svg viewBox="0 0 320 262" width="100%" style="max-width:360px" role="img" aria-label="Consolidación promedio por lóbulo">${Object.keys(LUNG).map(forma).join('')}${forma('accesorio')}<text x="96" y="258" text-anchor="middle" font-size="11" fill="var(--hint)">Pulmón izquierdo</text><text x="224" y="258" text-anchor="middle" font-size="11" fill="var(--hint)">Pulmón derecho</text></svg>`
   const lista = [...LOBULOS].sort((a, b) => s.lob[b.id] - s.lob[a.id]).map((l) => `<div><span>${NOMBRE_LOB(l.id)}</span><b>${fmt(s.lob[l.id], 1)} %</b></div>`).join('')
   const leyenda = ['< 1 %', '1–3 %', '3–6 %', '6–10 %', '≥ 10 %'].map((t, i) => `<span><i style="background:var(--rs-s${i + 1})"></i>${t}</span>`).join('')
   const cran = (s.lob.apical_derecho + s.lob.cardiaco_derecho + s.lob.apical_izquierdo + s.lob.cardiaco_izquierdo) / 4
