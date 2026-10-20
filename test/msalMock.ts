@@ -8,3 +8,4 @@ export async function getToken(silencioso?: boolean) { if (silencioso && localSt
 export function haySesionMicrosoft() { return true }
 export async function logout() { localStorage.removeItem("mockUser"); return false }
 export function enPopupMsal() { return false }
+export function enIframe() { return false }

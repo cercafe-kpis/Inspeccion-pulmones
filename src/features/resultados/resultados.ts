@@ -1,6 +1,5 @@
 import './resultados.css'
 import { estado } from '../../state'
-import { showToast } from '../../ui/avisos'
 import { calcularAlcance, cargarDatos, codigosDeFiltro, type Alcance, type Catalogo, type Fila } from './datos'
 import {
   barrasGranjas, barrasSeveridad, esc, fmt, graficaCategorias, graficaLotes, mapaPulmonar, pill, spark,
@@ -10,7 +9,7 @@ import { analisis, INDICADORES, nivelIdn, NIVEL_TXT, stats, type Stats } from '.
 
 /**
  * Pestaña "Resultados" (antes: dashboard Score Pulmonar aparte).
- * Vistas: Resumen · Granja y consecutivos · Comparativo. Exporta a Excel y a PDF (impresión del navegador).
+ * Vistas: Resumen · Granja y consecutivos · Comparativo. Exporta a Excel y a PDF con el logo de Cercafe (ver exportar.ts).
  * Qué granjas ve cada cuenta lo decide calcularAlcance() con la lista Usuarios.
  */
 
@@ -220,7 +219,7 @@ function vistaResumen(vis: Fila[], cur: Fila[], red: Stats) {
     return { g, sg, ult, serie, asoc: fg[0]?.asociado || '' }
   }).sort((a, b) => b.sg.idn - a.sg.idn)
   const tabla = `<div class="rs-panel"><h3>Granjas</h3><p class="rs-sub">De mayor a menor IDN en el periodo. Toque una granja para ver sus consecutivos.</p>
-    <div class="rs-scroll"><table class="rs-table"><thead><tr><th>Granja</th><th>IDN</th><th>Tendencia 12 m</th><th class="n">Consecutivos</th><th class="n">Cerdos</th><th class="n">Pleuritis</th><th>Último lote</th></tr></thead><tbody>
+    <div class="rs-scroll"><table class="rs-table"><thead><tr><th>Granja</th><th>IDN</th><th>Tendencia 12 m</th><th class="n">Consecutivos</th><th class="n">Cerdos</th><th class="n">Pleuritis</th><th>Último consecutivo</th></tr></thead><tbody>
     ${filasG.map((r) => `<tr tabindex="0" data-go="${esc(r.g)}"><td><div class="nm">${esc(vista(r.g))}</div>${verAsoc ? `<div class="rs-muted">${esc(nombreAsoc(r.asoc))}</div>` : ''}</td><td>${pill(r.sg.idn)}</td><td>${spark(r.serie)}</td><td class="n">${r.sg.lotes}</td><td class="n">${r.sg.n}</td><td class="n">${fmt(r.sg.pleur, 1)} %</td><td>${esc(r.ult)}</td></tr>`).join('')}
     </tbody></table></div></div>`
 
@@ -341,49 +340,47 @@ function tablaIndicadores(cur: Fila[]) {
 
 /* ══ Exportar ══ */
 
-let xlsxCargando: Promise<void> | null = null
-function cargarXLSX(): Promise<void> {
-  if ((window as unknown as { XLSX?: unknown }).XLSX) return Promise.resolve()
-  xlsxCargando = xlsxCargando || new Promise((res, rej) => {
-    const s = document.createElement('script')
-    s.src = 'https://unpkg.com/xlsx@0.18.5/dist/xlsx.full.min.js'
-    s.onload = () => res()
-    s.onerror = () => { xlsxCargando = null; rej(new Error('No se pudo cargar la librería de Excel (¿sin conexión?)')) }
-    document.head.append(s)
-  })
-  return xlsxCargando
+/** Nombre del reporte: la granja (y consecutivo) en "Granja y consecutivos"; si no, el asociado o todos. */
+function nombreReporte() {
+  if (f.tab === 'gra') return vista(f.granja) + (f.lote ? ' · Consecutivo ' + f.lote : '')
+  return alcance.principal ? nombreAsoc(alcance.principal) : f.asoc ? nombreAsoc(f.asoc) : 'Todos los asociados'
 }
+const nombreVista = () => (f.tab === 'res' ? 'Resumen' : f.tab === 'gra' ? 'Granja y consecutivos' : 'Comparativo')
+const paraArchivo = (t: string) => t.replace(/[\\/:*?"<>|·]+/g, ' ').replace(/\s+/g, ' ').trim()
 
 async function exportarExcel() {
   if (!datos) return
-  try {
-    await cargarXLSX()
-    const r = rango()
-    const cur = filasVisibles().filter((x) => enRango(x, r))
-    const filas = filasTabla(cur).map((x) => {
-      const o: Record<string, string | number> = { ...x.cols, Cerdos: x.s.n }
-      INDICADORES.forEach((i) => (o[i.lbl] = Math.round((x.s[i.key] as number) * 10000) / 10000))
-      o['Nivel IDN'] = NIVEL_TXT[nivelIdn(x.s.idn)]
-      return o
-    })
-    const X = (window as unknown as { XLSX: any }).XLSX
-    const ws = X.utils.json_to_sheet(filas)
-    const wb = X.utils.book_new()
-    X.utils.book_append_sheet(wb, ws, f.nivelTabla === 'granja' ? 'Por granja' : 'Por consecutivo')
-    X.writeFile(wb, `ScorePulmonar_${f.nivelTabla === 'granja' ? 'granjas' : 'consecutivos'}_${r.hasta}.xlsx`)
-  } catch (e) {
-    showToast((e as Error).message, 'err', 6000)
-  }
+  const r = rango()
+  const cur = filasVisibles().filter((x) => enRango(x, r))
+  const filas = filasTabla(cur).map((x) => {
+    const o: Record<string, string | number> = { ...x.cols, Cerdos: x.s.n }
+    INDICADORES.forEach((i) => (o[i.lbl] = Math.round((x.s[i.key] as number) * 10000) / 10000))
+    o['Nivel IDN'] = NIVEL_TXT[nivelIdn(x.s.idn)]
+    return o
+  })
+  const porGranjaN = f.nivelTabla === 'granja'
+  const { generarExcel } = await import('./exportar')
+  await generarExcel({
+    hoja: porGranjaN ? 'Por granja' : 'Por consecutivo',
+    titulo: alcance.principal ? nombreAsoc(alcance.principal) : f.asoc ? nombreAsoc(f.asoc) : 'Todos los asociados',
+    subtitulo: `Indicadores ${porGranjaN ? 'por granja' : 'por consecutivo'} · ${textoFiltros({ ...r }).replace(/ · Granja:.*$/, '')}`,
+    archivo: `ScorePulmonar_${porGranjaN ? 'granjas' : 'consecutivos'}_${r.hasta}.xlsx`,
+    filas,
+  })
 }
 
-function exportarPDF() {
-  const titulo = document.title
-  const nombre = f.tab === 'gra' ? vista(f.granja) + (f.lote ? ' consecutivo ' + f.lote : '') : alcance.principal ? nombreAsoc(alcance.principal) : f.asoc ? nombreAsoc(f.asoc) : 'Red Cercafe'
-  document.title = `Score Pulmonar - ${nombre} - ${hoyISO()}`
-  document.body.classList.add('rs-imprimiendo')
-  const limpiar = () => { document.title = titulo; document.body.classList.remove('rs-imprimiendo'); window.removeEventListener('afterprint', limpiar) }
-  window.addEventListener('afterprint', limpiar)
-  setTimeout(() => window.print(), 50)
+async function exportarPDF() {
+  const cont = document.getElementById('rs-vista')
+  if (!cont) return
+  const nombre = nombreReporte()
+  const asoc = f.tab === 'gra' ? datos?.filas.find((x) => x.granja === f.granja)?.asociado : ''
+  const { generarPDF } = await import('./exportar')
+  await generarPDF({
+    contenido: cont,
+    titulo: nombre,
+    subtitulo: [nombreVista(), asoc ? nombreAsoc(asoc) : '', textoFiltros(rango()).replace(/ · Granja:.*$/, '')].filter(Boolean).join(' · '),
+    archivo: `Score Pulmonar - ${paraArchivo(nombre)} - ${hoyISO()}.pdf`,
+  })
 }
 
 /* ══ Tooltip ══ */
