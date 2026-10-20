@@ -4,6 +4,6 @@ const cuenta = () => ({ username: localStorage.getItem('mockUser') || 'admin@tes
 export function crearMsalApp() { return null }
 export async function loginPopup() { return cuenta() }
 export async function restaurarCuenta() { return localStorage.getItem('mockLogged') ? cuenta() : null }
-export async function getToken() { return 'token-falso' }
+export async function getToken(silencioso?: boolean) { if (silencioso && localStorage.getItem('mockSilentFail')) { const e = new Error('La sesión de Microsoft venció') as Error & { tipo?: string }; e.tipo = 'auth'; throw e } return 'token-falso' }
 export function haySesionMicrosoft() { return true }
 export function logout() { return true }

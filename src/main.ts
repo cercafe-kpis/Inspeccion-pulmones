@@ -69,6 +69,29 @@ function pantallaInicial(): 'captura' | 'resultados' {
 }
 
 /**
+ * Con conexión pero sin poder verificar la cuenta (p. ej. Microsoft pide confirmar la sesión): se muestra
+ * una barra con el motivo. Al tocarla se reintenta permitiendo la ventana de Microsoft (necesita un toque).
+ */
+let correoActual = ''
+function mostrarErrorVerificacion(r: ResultadoUsuario) {
+  const bar = document.getElementById('verif-bar')!
+  if (r.estado === 'desconocido' && r.error && navigator.onLine && !estado.usuario) {
+    bar.textContent = `⚠️ No se pudo verificar su usuario (${r.error}). Toque aquí para reintentar.`
+    bar.classList.add('on')
+  } else {
+    bar.classList.remove('on')
+  }
+}
+async function reintentarVerificacion() {
+  const bar = document.getElementById('verif-bar')!
+  bar.textContent = '⟳ Verificando su usuario…'
+  const r = await resolverUsuario(correoActual, true)
+  mostrarErrorVerificacion(r)
+  if (!aplicarUsuario(r)) return
+  if (estado.usuario) irA(pantallaInicial())
+}
+
+/**
  * Muestra la app ya autenticada (igual que antes) y, además:
  *  - verifica la cuenta en la lista Usuarios (primero con la copia del celular, luego con SharePoint);
  *  - actualiza la copia de granjas activas;
@@ -88,6 +111,7 @@ async function showApp(acc: AccountInfo) {
   setTimeout(autoSincronizar, 1000)
 
   const correo = acc.username || ''
+  correoActual = correo
   const previo = usuarioLocal(correo)
   // Con copia buena (o sin copia todavía) se sigue de inmediato: nunca frenar la captura en campo esperando la red.
   let inicial: 'captura' | 'resultados' | null = null
@@ -100,6 +124,7 @@ async function showApp(acc: AccountInfo) {
   refrescarGranjas()
   const r = await resolverUsuario(correo)
   if (r.estado === 'desconocido' && previo.estado === 'sin-acceso') { aplicarUsuario(previo); return }
+  mostrarErrorVerificacion(r)
   if (!aplicarUsuario(r)) return
   const ahora = pantallaInicial()
   if (inicial === null) {
@@ -164,5 +189,5 @@ Object.assign(window, {
   sincronizarPendientes: () => sincronizarPendientes(),
   filtrarG, abrirG, onConsecInput, actualizarOrdenSugerido,
   iniciarSesion, irSesion, guardarYSiguiente, saltarAnimal,
-  abrirAdmin, cerrarAdmin, admTab, irA,
+  abrirAdmin, cerrarAdmin, admTab, irA, reintentarVerificacion,
 })

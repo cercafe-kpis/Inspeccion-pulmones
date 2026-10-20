@@ -50,7 +50,7 @@ export type ResultadoUsuario =
   | { estado: 'ok'; usuario: UsuarioApp }
   | { estado: 'sin-acceso'; motivo: string }
   /** No se pudo consultar (sin señal / error) y no hay copia: se deja capturar para no frenar el trabajo de campo. */
-  | { estado: 'desconocido' }
+  | { estado: 'desconocido'; error?: string }
 
 /**
  * Busca el correo en la lista Usuarios. Con conexión confirma contra SharePoint y guarda la copia;
@@ -79,11 +79,12 @@ export function usuarioLocal(correo: string): ResultadoUsuario {
   return u ? evaluar(u) : { estado: 'desconocido' }
 }
 
-export async function resolverUsuario(correo: string): Promise<ResultadoUsuario> {
+/** `interactivo` = llamada desde un toque de la persona: si la sesión necesita confirmarse, puede abrir la ventana de Microsoft. */
+export async function resolverUsuario(correo: string, interactivo = false): Promise<ResultadoUsuario> {
   correo = (correo || '').toLowerCase()
   if (navigator.onLine) {
     try {
-      const todos = await listarUsuarios(true)
+      const todos = await listarUsuarios(!interactivo)
       const sp = todos.find((u) => u.Correo === correo)
       if (!sp) {
         try { localStorage.removeItem(KEY_USUARIO) } catch { /* nada */ }
@@ -109,6 +110,8 @@ export async function resolverUsuario(correo: string): Promise<ResultadoUsuario>
           motivo: `No se pudo verificar su acceso: su cuenta no tiene permiso para leer la lista Usuarios del sitio Inspeccion_pulmones (${err.status}). Pida a Cercafe que le dé permiso de lectura.`,
         }
       }
+      const local = usuarioLocal(correo)
+      return local.estado === 'desconocido' ? { estado: 'desconocido', error: err.message } : local
     }
   }
   return usuarioLocal(correo)
