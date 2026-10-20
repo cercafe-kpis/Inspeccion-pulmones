@@ -99,7 +99,16 @@ export async function resolverUsuario(correo: string): Promise<ResultadoUsuario>
       try { localStorage.setItem(KEY_USUARIO, JSON.stringify(u)) } catch { /* nada */ }
       return evaluar(u)
     } catch (e) {
-      console.warn('No se pudo verificar el usuario en SharePoint:', (e as Error).message)
+      const err = e as Error & { status?: number }
+      console.warn('No se pudo verificar el usuario en SharePoint:', err.message)
+      // SharePoint respondió que esta cuenta NO puede leer la lista Usuarios (o no existe): es un problema de
+      // permisos, no de señal. Sin copia guardada, se muestra el motivo en vez de abrir la captura por defecto.
+      if ((err.status === 401 || err.status === 403 || err.status === 404) && !usuarioGuardado(correo)) {
+        return {
+          estado: 'sin-acceso',
+          motivo: `No se pudo verificar su acceso: su cuenta no tiene permiso para leer la lista Usuarios del sitio Inspeccion_pulmones (${err.status}). Pida a Cercafe que le dé permiso de lectura.`,
+        }
+      }
     }
   }
   return usuarioLocal(correo)

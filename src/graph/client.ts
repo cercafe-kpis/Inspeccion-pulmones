@@ -88,7 +88,7 @@ export async function getListId(nombre: NombreLista, silencioso?: boolean): Prom
     `/sites/${siteId}/lists?$filter=displayName eq '${nombre}'`,
     { silencioso },
   )
-  if (!d.value?.length) throw errTipo(`Lista "${nombre}" no encontrada en SharePoint.`, 'http')
+  if (!d.value?.length) throw errTipo(`Lista "${nombre}" no encontrada en SharePoint (o la cuenta no tiene permiso para verla).`, 'http', false, 404)
   const fresco = leerIds()
   fresco.listas = { ...(fresco.listas || {}), [nombre]: d.value[0].id }
   fresco.siteId = siteId
