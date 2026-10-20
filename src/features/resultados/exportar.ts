@@ -159,8 +159,8 @@ export async function generarPDF(opts: { contenido: HTMLElement; titulo: string;
     const encabezado = () => {
       doc.setFillColor(VERDE)
       doc.rect(0, 0, PW, 21, 'F')
-      if (logo) doc.addImage(logo, 'PNG', M, 2.5, 32, 16)
-      const x = logo ? M + 38 : M
+      if (logo) doc.addImage(logo, 'PNG', M, 3, 37, 15)
+      const x = logo ? M + 44 : M
       doc.setTextColor('#ffffff')
       doc.setFont('helvetica', 'bold'); doc.setFontSize(7.5)
       doc.text('SCORE PULMONAR · MÉTODO MADEC', x, 7)
@@ -248,7 +248,7 @@ export async function generarExcel(opts: {
       for (let c = 1; c <= nCols; c++) ws.getCell(r, c).fill = verde
     }
     const logo = logoCercafe()
-    if (logo) ws.addImage(wb.addImage({ base64: logo, extension: 'png' }), { tl: { col: 0.15, row: 0.25 }, ext: { width: 124, height: 62 } })
+    if (logo) ws.addImage(wb.addImage({ base64: logo, extension: 'png' }), { tl: { col: 0.15, row: 0.25 }, ext: { width: 148, height: 60 } })
     const blanco = (size: number, bold = false) => ({ color: { argb: 'FFFFFFFF' }, size, bold, name: 'Calibri' })
     ws.getCell(1, 3).value = 'SCORE PULMONAR · MÉTODO MADEC'; ws.getCell(1, 3).font = blanco(8, true)
     ws.getCell(2, 3).value = opts.titulo; ws.getCell(2, 3).font = blanco(15, true)
