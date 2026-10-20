@@ -1,6 +1,6 @@
 import './styles.css'
 import type { AccountInfo } from '@azure/msal-browser'
-import { loginPopup, logout, restaurarCuenta } from './auth/msal'
+import { enPopupMsal, loginPopup, logout, restaurarCuenta } from './auth/msal'
 import { refrescarGranjas, resolverUsuario, usuarioLocal, type ResultadoUsuario } from './catalogos/catalogoLocal'
 import { abrirAdmin, admTab, cerrarAdmin } from './features/admin/admin'
 import { guardarYSiguiente, saltarAnimal } from './features/captura/captura'
@@ -140,7 +140,14 @@ async function showApp(acc: AccountInfo) {
 
 /* ── Arranque ── */
 
+/** Ventana emergente de Microsoft que volvió a la app: solo se muestra un aviso; la ventana principal la cierra. */
+const EN_POPUP = enPopupMsal()
+
 window.addEventListener('DOMContentLoaded', async () => {
+  if (EN_POPUP) {
+    document.body.innerHTML = '<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;text-align:center;font:15px -apple-system,Segoe UI,sans-serif;color:#555">Completando el inicio de sesión…<br><br>Si esta ventana no se cierra sola, ciérrela y vuelva a la app.</div>'
+    return
+  }
   // La versión anterior de la app consultaba la API de GitHub en cada apertura para recargarse; ya no
   // hace falta (el service worker nuevo se actualiza solo). Se limpia su marca y la caché vieja.
   try { localStorage.removeItem('_dash_pulmon_sha') } catch { /* nada */ }
@@ -161,7 +168,7 @@ window.addEventListener('DOMContentLoaded', async () => {
  * descarga sola; la página se recarga para usarla SOLO si no hay un animal a medio capturar
  * (si está en la pantalla de captura, espera a que salga de ella o vuelva a abrir la app).
  */
-if ('serviceWorker' in navigator) {
+if ('serviceWorker' in navigator && !EN_POPUP) {
   let recargaPendiente = false
   const capturando = () => document.getElementById('s-captura')?.classList.contains('on') && document.getElementById('app')?.style.display === 'block'
   const recargarSiSePuede = () => { if (recargaPendiente && !capturando()) location.reload() }

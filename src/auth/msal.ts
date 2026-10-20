@@ -46,11 +46,25 @@ function limpiarInteraccionPegada() {
   }
 }
 
+/**
+ * ¿Esta página es la ventana emergente de inicio de sesión de Microsoft que volvió a la app?
+ * En ese caso la app NO debe arrancar ni tocar la respuesta (#code=…): la ventana principal la lee
+ * y cierra esta ventana. Si la app la procesara, el inicio de sesión quedaría a medias.
+ */
+export function enPopupMsal(): boolean {
+  try {
+    if (!window.opener || window.opener === window) return false
+    return (typeof window.name === 'string' && window.name.startsWith('msal.')) || /[#&?](code|error|state)=/.test(location.hash)
+  } catch {
+    return false
+  }
+}
+
 /** initialize + procesar cualquier respuesta de redirect pendiente (cierra interacciones a medias). */
 async function listo(): Promise<PublicClientApplication> {
   const app = crearMsalApp()
   await app.initialize()
-  await app.handleRedirectPromise().catch((e) => console.warn('handleRedirectPromise:', (e as Error)?.message))
+  if (!enPopupMsal()) await app.handleRedirectPromise().catch((e) => console.warn('handleRedirectPromise:', (e as Error)?.message))
   return app
 }
 
