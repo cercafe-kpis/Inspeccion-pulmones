@@ -1,6 +1,33 @@
-# Inspección Pulmonar — App de captura de campo
+# Inspección Pulmonar — Captura y Resultados
 
-PWA para que los técnicos de Cercafe registren, cerdo por cerdo, la evaluación de lóbulos pulmonares con el **método Madec** y los hallazgos asociados. Los datos van a la lista de SharePoint `InspeccionPulmones` (sitio `Inspeccion_pulmones`) vía Microsoft Graph. El análisis está en el repositorio aparte [`dashboard-pulmones`](https://github.com/cercafe-kpis/dashboard-pulmones).
+PWA de Cercafe para la inspección pulmonar porcina (**método Madec**). En una sola app:
+
+- **Captura**: los técnicos registran, cerdo por cerdo, los lóbulos y hallazgos; funciona sin señal.
+- **Resultados** (antes el dashboard aparte `dashboard-pulmones`): IDN, consolidación, lesiones, mapa pulmonar, comparativo entre granjas, Excel y PDF.
+- **Administrar**: granjas, asociados y usuarios.
+
+Los datos van a la lista de SharePoint `InspeccionPulmones` (sitio `Inspeccion_pulmones`) vía Microsoft Graph.
+
+## Quién ve qué (lista Usuarios)
+
+| Rol | Pestañas |
+|---|---|
+| Administrador | Captura · Resultados · Administrar. Con `?site=GAM` (ParametroSite) abre Resultados como lo ve ese asociado. |
+| Tecnico | Captura · Resultados (todas las granjas) |
+| Asociado | Solo Resultados, con los asociados de su columna `Asociados` (ej. `CERDOS DEL OTUN;LM`). `?site=` se ignora. |
+| No registrado / inactivo | Sin acceso |
+
+Sin señal y sin copia guardada del usuario, la app deja **capturar** (para no frenar el trabajo de campo); Resultados siempre necesita conexión.
+
+**En cada Tu.HUB** se inserta: `https://cercafe-kpis.github.io/Inspeccion-pulmones/?vista=resultados` (el asociado igual solo ve Resultados). El botón "Abrir Tu.HUB" usa la columna `SitioTuHub` de Asociados.
+
+### Resultados
+
+- **Resumen**: IDN del periodo con nivel y variación frente al periodo anterior, cerdos/lotes/granjas, consolidación, neumonía, pleuritis, poliserositis, pérdidas GDP (todos con referencia "Red Cercafe" = todas las granjas en el mismo periodo), tabla de granjas con tendencia de 12 meses, lotes para revisar (últimos 60 días, moderado o severo), otras lesiones y artefactos.
+- **Granja y lotes**: análisis y recomendación según el IDN, IDN por lote en el tiempo, mapa pulmonar (consolidación promedio por lóbulo), cerdos por categoría Madec, severidad individual y tabla de lotes (tocar un lote filtra todo a ese lote).
+- **Comparativo**: cualquiera de los 15 indicadores por granja, severidad individual en barras 100 %, tabla por granja o por lote.
+- **Excel** (15 indicadores, por granja o por lote) y **PDF** (imprime la pestaña abierta).
+- Mismas fórmulas del dashboard anterior (`src/features/resultados/indicadores.ts`). Las inspecciones se guardan en el navegador (IndexedDB) y en cada visita solo se descarga lo nuevo.
 
 ## Versión 2 (octubre 2026): qué cambió
 
@@ -49,6 +76,10 @@ src/
   utils/madec.ts           Consolidación, categoría, severidad, GDP, IdLocal
   features/captura/        Buscador de granja, lóbulos, hallazgos, sesión/orden sugerido, guardado
   features/admin/admin.ts  Pantalla de administración (solo Rol Administrador)
+  features/resultados/     Resultados: datos y alcance por rol, indicadores, gráficas SVG, vistas, Excel/PDF
+                           (se descarga solo cuando alguien abre la pestaña)
+  ui/navegacion.ts         Pestañas Captura · Resultados · Administrar según el rol
+test/msalMock.ts           Solo pruebas locales (npx vite build --mode test): login ficticio
 ```
 
 ## Reglas de negocio (sin cambios)

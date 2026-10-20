@@ -1,5 +1,6 @@
 import { defineConfig } from 'vite'
 import { VitePWA } from 'vite-plugin-pwa'
+import { fileURLToPath } from 'node:url'
 
 /**
  * Build de la app de captura (Inspección Pulmonar).
@@ -12,8 +13,12 @@ import { VitePWA } from 'vite-plugin-pwa'
  * - skipWaiting/clientsClaim: la versión nueva se activa sola apenas se descarga (mismo ajuste que
  *   tuvo que hacerse en la app de Recepción de Cerdos; sin esto la actualización nunca "llegaba").
  */
-export default defineConfig({
+export default defineConfig(({ mode }) => ({
   base: './',
+  // Modo "test" (solo pruebas locales): reemplaza el login de Microsoft por una cuenta ficticia (test/msalMock.ts).
+  resolve: mode === 'test'
+    ? { alias: [{ find: /^(\.\.?\/)+auth\/msal$/, replacement: fileURLToPath(new URL('./test/msalMock.ts', import.meta.url)) }] }
+    : {},
   plugins: [
     VitePWA({
       filename: 'sw.js',
@@ -31,4 +36,4 @@ export default defineConfig({
       },
     }),
   ],
-})
+}))
