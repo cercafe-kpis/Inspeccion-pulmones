@@ -1,5 +1,6 @@
 import { LISTAS } from '../../config'
-import { getListId, getSiteId, graph, listarTodo } from '../../graph/client'
+import { actualizarEnBloque } from '../../graph/batch'
+import { listarTodo } from '../../graph/client'
 import { showToast } from '../../ui/avisos'
 import { severidadDe } from '../../utils/madec'
 
@@ -44,37 +45,14 @@ export async function pintarMantenimiento() {
   }
 }
 
-const esperar = (ms: number) => new Promise((r) => setTimeout(r, ms))
-
 /** Actualiza de a 20 registros por llamada (Graph $batch), con reintento si SharePoint pide esperar (429). */
 async function aplicar() {
   const btn = document.getElementById('mt-aplicar') as HTMLButtonElement
   const est = document.getElementById('mt-estado')!
   btn.disabled = true
-  const siteId = await getSiteId()
-  const listId = await getListId(LISTAS.INSPECCIONES)
-  let ok = 0, fallos = 0
-  for (let i = 0; i < pendientes.length; i += 20) {
-    let lote = pendientes.slice(i, i + 20)
-    for (let intento = 0; intento < 5 && lote.length; intento++) {
-      const r = await graph<{ responses: { id: string; status: number; headers?: Record<string, string> }[] }>('/$batch', {
-        method: 'POST',
-        timeout: 60000,
-        body: {
-          requests: lote.map((p) => ({
-            id: p.id, method: 'PATCH', url: `/sites/${siteId}/lists/${listId}/items/${p.id}/fields`,
-            headers: { 'Content-Type': 'application/json' }, body: { severidad: p.nueva },
-          })),
-        },
-      })
-      const reintentar = r.responses.filter((x) => x.status === 429 || x.status === 503)
-      ok += r.responses.filter((x) => x.status >= 200 && x.status < 300).length
-      fallos += r.responses.filter((x) => x.status >= 300 && x.status !== 429 && x.status !== 503).length
-      lote = lote.filter((p) => reintentar.some((x) => x.id === p.id))
-      if (lote.length) await esperar(1000 * (parseInt(reintentar[0]?.headers?.['Retry-After'] || '') || 5))
-    }
-    est.textContent = `Corrigiendo… ${ok.toLocaleString('es-CO')} de ${pendientes.length.toLocaleString('es-CO')}`
-  }
+  const total = pendientes.length.toLocaleString('es-CO')
+  const { ok, fallos } = await actualizarEnBloque(LISTAS.INSPECCIONES, pendientes.map((p) => ({ id: p.id, fields: { severidad: p.nueva } })),
+    (ok) => { est.textContent = `Corrigiendo… ${ok.toLocaleString('es-CO')} de ${total}` })
   showToast(fallos ? `Se corrigieron ${ok} registros; ${fallos} fallaron. Vuelva a abrir Mantenimiento para reintentar.` : `✓ ${ok} registros corregidos`, fallos ? 'warn' : 'ok', 7000)
   await pintarMantenimiento()
 }

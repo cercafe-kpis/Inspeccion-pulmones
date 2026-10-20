@@ -5,6 +5,7 @@ import {
 } from '../../graph/catalogos'
 import { estado } from '../../state'
 import { showScreen, showToast } from '../../ui/avisos'
+import { pintarConsecutivos } from './consecutivos'
 import { pintarMantenimiento } from './mantenimiento'
 
 /**
@@ -14,7 +15,7 @@ import { pintarMantenimiento } from './mantenimiento'
  * con las inspecciones históricas.
  */
 
-type Tab = 'granjas' | 'asociados' | 'usuarios' | 'mantenimiento'
+type Tab = 'granjas' | 'asociados' | 'usuarios' | 'consecutivos' | 'mantenimiento'
 let tab: Tab = 'granjas'
 let filtro = ''
 let datos: { granjas: GranjaSP[]; asociados: AsociadoSP[]; usuarios: UsuarioSP[] } = { granjas: [], asociados: [], usuarios: [] }
@@ -43,6 +44,7 @@ export function admTab(t: Tab) {
   filtro = ''
   document.querySelectorAll<HTMLButtonElement>('#adm-tabs button').forEach((b) => b.classList.toggle('on', b.dataset.tab === t))
   if (t === 'mantenimiento') pintarMantenimiento()
+  else if (t === 'consecutivos') pintarConsecutivos()
   else pintarLista()
 }
 
@@ -56,6 +58,7 @@ async function cargar() {
     const [granjas, asociados, usuarios] = await Promise.all([listarGranjas(), listarAsociados(), listarUsuarios()])
     datos = { granjas, asociados, usuarios }
     if (tab === 'mantenimiento') pintarMantenimiento()
+    else if (tab === 'consecutivos') pintarConsecutivos()
     else pintarLista()
   } catch (e) {
     body().innerHTML = `<div class="adm-msg">No se pudieron cargar las listas: ${esc((e as Error).message)}</div>`

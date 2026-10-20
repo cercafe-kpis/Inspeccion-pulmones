@@ -75,7 +75,7 @@ export async function revisarSesionPendiente() {
   const continuar = confirm(
     `Tienes una captura sin terminar:\n\n` +
       `Granja: ${s.gN}\nConsecutivo: ${s.consec}\nÚltimo pulmón guardado: ${s.orden - 1}\n\n` +
-      `Presiona "Aceptar" para continuar en el pulmón ${s.orden}, o "Cancelar" para descartarla y empezar un lote nuevo.`,
+      `Presiona "Aceptar" para continuar en el pulmón ${s.orden}, o "Cancelar" para descartarla y empezar un consecutivo nuevo.`,
   )
   if (!continuar) { borrarSesionActiva(); return }
 
@@ -154,7 +154,7 @@ export async function actualizarOrdenSugerido() {
         (horaTxt ? ` (última verificación en línea: ${horaTxt})` : '') +
         `. Se sugiere continuar en el orden ${maxFinal + 1}. Verifica en línea en cuanto tengas señal.`
     } else {
-      hint.textContent = 'Sin conexión: no hay datos previos en este dispositivo para verificar el último orden de este lote.'
+      hint.textContent = 'Sin conexión: no hay datos previos en este dispositivo para verificar el último orden de este consecutivo.'
     }
     return
   }
@@ -174,17 +174,17 @@ export async function actualizarOrdenSugerido() {
       const maxOrden = Math.max(...candidatos)
       inicioEl.value = String(maxOrden + 1)
       let msg = ordenesSP.length
-        ? `Este lote ya tiene ${ordenesSP.length} cerdo(s) sincronizados (hasta el orden ${maxSP}).`
-        : `Este lote aún no tiene cerdos sincronizados en SharePoint.`
+        ? `Este consecutivo ya tiene ${ordenesSP.length} cerdo(s) sincronizados (hasta el orden ${maxSP}).`
+        : `Este consecutivo aún no tiene cerdos sincronizados en SharePoint.`
       if (maxPendiente !== null && maxPendiente >= maxSP) msg += ` Además hay registros pendientes de sincronizar en este equipo hasta el orden ${maxPendiente}.`
       if (ultLocal !== null && ultLocal > maxSP && (maxPendiente === null || ultLocal > maxPendiente)) {
-        msg += ` Este celular ya capturó este lote hasta el orden ${ultLocal}.`
+        msg += ` Este celular ya capturó este consecutivo hasta el orden ${ultLocal}.`
       }
       msg += ` Se continuará en el orden ${maxOrden + 1}.`
       hint.textContent = msg
     } else {
       inicioEl.value = '1'
-      hint.textContent = 'Lote nuevo: se iniciará en el orden 1.'
+      hint.textContent = 'Consecutivo nuevo: se iniciará en el orden 1.'
     }
   } catch (e) {
     if (miToken !== ordenCheckToken) return
@@ -201,7 +201,7 @@ export async function actualizarOrdenSugerido() {
       inicioEl.value = String(maxFinal + 1)
       hint.textContent = `⚠️ No se pudo verificar en línea (${m}) — usando datos guardados en este dispositivo. Se sugiere el orden ${maxFinal + 1}, pero VERIFICA antes de continuar.`
     } else {
-      hint.textContent = `⚠️ No se pudo verificar el último orden (${m}). Revísalo manualmente antes de continuar — este lote podría ya tener registros.`
+      hint.textContent = `⚠️ No se pudo verificar el último orden (${m}). Revísalo manualmente antes de continuar — este consecutivo podría ya tener registros.`
     }
     console.warn('No se pudo verificar orden sugerido:', m)
   }
@@ -230,7 +230,7 @@ export async function iniciarSesion() {
 
   if (navigator.onLine) {
     btn.disabled = true
-    btn.innerHTML = 'Verificando lote existente...'
+    btn.innerHTML = 'Verificando consecutivo existente...'
     let ordenesSP: number[] | null = null, fallo: Error | null = null
     try {
       ordenesSP = await obtenerOrdenesExistentes(gId, consec)
@@ -248,7 +248,7 @@ export async function iniciarSesion() {
         if (ordenesExistentes.includes(inicio) || inicio <= maxOrden) {
           const n = ordenesSP.length + pendientesLocales.length
           const continuar = confirm(
-            `⚠️ Este lote (${gN}, consecutivo ${consec}) ya tiene ${n || 'varios'} cerdo(s) guardado(s) (en SharePoint o en este equipo), hasta el orden ${maxOrden}.\n\n` +
+            `⚠️ El consecutivo ${consec} (${gN}) ya tiene ${n || 'varios'} cerdo(s) guardado(s) (en SharePoint o en este equipo), hasta el orden ${maxOrden}.\n\n` +
               `Si continúas desde el orden ${inicio}, vas a DUPLICAR registros que ya existen.\n\n` +
               `Presiona "Aceptar" para continuar automáticamente desde el orden ${maxOrden + 1} (recomendado), o "Cancelar" para revisar el consecutivo.`,
           )
@@ -266,7 +266,7 @@ export async function iniciarSesion() {
       if (candidatosLocales.length > 0) {
         const maxLocal = Math.max(...candidatosLocales)
         const continuar = confirm(
-          `⚠️ No se pudo verificar en SharePoint si este lote ya existe (${m}), pero según datos guardados en este equipo, el lote (${gN}, consecutivo ${consec}) ya llegó hasta el orden ${maxLocal}.\n\n` +
+          `⚠️ No se pudo verificar en SharePoint si este consecutivo ya existe (${m}), pero según datos guardados en este equipo, el consecutivo ${consec} (${gN}) ya llegó hasta el orden ${maxLocal}.\n\n` +
             `Si continúas desde el orden ${inicio}, es muy probable que DUPLIQUES cerdos.\n\n` +
             `Presiona "Aceptar" para continuar desde el orden ${maxLocal + 1} (recomendado), o "Cancelar" para revisar tu conexión primero.`,
         )
@@ -275,9 +275,9 @@ export async function iniciarSesion() {
         inicioEl.value = String(inicio)
       } else {
         const continuar = confirm(
-          `⚠️ No se pudo verificar en SharePoint si el lote (${gN}, consecutivo ${consec}) ya tiene registros guardados (${m}).\n\n` +
-            `Si este lote ya se capturó antes (por ejemplo, la app se cerró a mitad de camino) y continúas desde el orden ${inicio}, vas a DUPLICAR cerdos que ya existen.\n\n` +
-            `Presiona "Cancelar" y revisa tu conexión antes de continuar, o "Aceptar" SOLO si estás seguro de que este es un lote nuevo o de que el orden ${inicio} es correcto.`,
+          `⚠️ No se pudo verificar en SharePoint si el consecutivo ${consec} (${gN}) ya tiene registros guardados (${m}).\n\n` +
+            `Si este consecutivo ya se capturó antes (por ejemplo, la app se cerró a mitad de camino) y continúas desde el orden ${inicio}, vas a DUPLICAR cerdos que ya existen.\n\n` +
+            `Presiona "Cancelar" y revisa tu conexión antes de continuar, o "Aceptar" SOLO si estás seguro de que este es un consecutivo nuevo o de que el orden ${inicio} es correcto.`,
         )
         if (!continuar) return
       }
@@ -286,7 +286,7 @@ export async function iniciarSesion() {
     const maxLocal = Math.max(...localesConocidos)
     if (localesConocidos.includes(inicio) || inicio <= maxLocal) {
       const continuar = confirm(
-        `⚠️ Sin conexión — pero este equipo ya tiene cerdos de este lote capturados, hasta el orden ${maxLocal}.\n\n` +
+        `⚠️ Sin conexión — pero este equipo ya tiene cerdos de este consecutivo capturados, hasta el orden ${maxLocal}.\n\n` +
           `Si continúas desde el orden ${inicio}, vas a DUPLICAR esos registros.\n\n` +
           `Presiona "Aceptar" para continuar desde el orden ${maxLocal + 1} (recomendado), o "Cancelar" para revisar.`,
       )

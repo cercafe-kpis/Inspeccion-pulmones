@@ -10,7 +10,7 @@ import { analisis, INDICADORES, nivelIdn, NIVEL_TXT, stats, type Stats } from '.
 
 /**
  * Pestaña "Resultados" (antes: dashboard Score Pulmonar aparte).
- * Vistas: Resumen · Granja y lotes · Comparativo. Exporta a Excel y a PDF (impresión del navegador).
+ * Vistas: Resumen · Granja y consecutivos · Comparativo. Exporta a Excel y a PDF (impresión del navegador).
  * Qué granjas ve cada cuenta lo decide calcularAlcance() con la lista Usuarios.
  */
 
@@ -124,11 +124,11 @@ function render() {
       <label>Periodo<select id="rs-per">${[['3', 'Últimos 3 meses'], ['6', 'Últimos 6 meses'], ['12', 'Últimos 12 meses'], ['todo', 'Todo el historial'], ['rango', 'Rango de fechas']].map(([v, t]) => `<option value="${v}" ${v === f.periodo ? 'selected' : ''}>${t}</option>`).join('')}</select></label>
       ${f.periodo === 'rango' ? `<label>Desde<input type="date" id="rs-desde" value="${esc(f.desde)}"></label><label>Hasta<input type="date" id="rs-hasta" value="${esc(f.hasta)}"></label>` : ''}
       ${f.tab === 'gra' ? `<label>Granja<select id="rs-granja">${granjas.map((g) => `<option value="${esc(g)}" ${g === f.granja ? 'selected' : ''}>${esc(vista(g))}</option>`).join('')}</select></label>
-        <label>Lote<select id="rs-lote"><option value="">Todos los lotes</option>${lotesGranja.map((c) => `<option ${c === f.lote ? 'selected' : ''}>${esc(c)}</option>`).join('')}</select></label>` : ''}
+        <label>Consecutivo<select id="rs-lote"><option value="">Todos los consecutivos</option>${lotesGranja.map((c) => `<option ${c === f.lote ? 'selected' : ''}>${esc(c)}</option>`).join('')}</select></label>` : ''}
       ${f.tab === 'com' ? `<label>Indicador<select id="rs-ind">${INDICADORES.map((i) => `<option value="${i.key}" ${i.key === f.ind ? 'selected' : ''}>${i.lbl}</option>`).join('')}</select></label>` : ''}
     </div>
     <div class="rs-tabs" role="tablist">
-      ${([['res', 'Resumen'], ['gra', 'Granja y lotes'], ['com', 'Comparativo']] as const).map(([k, t]) => `<button role="tab" data-tab="${k}" aria-selected="${f.tab === k}">${t}</button>`).join('')}
+      ${([['res', 'Resumen'], ['gra', 'Granja y consecutivos'], ['com', 'Comparativo']] as const).map(([k, t]) => `<button role="tab" data-tab="${k}" aria-selected="${f.tab === k}">${t}</button>`).join('')}
     </div>
     <div class="rs-impreso">${esc(textoFiltros(r))}</div>
     <div id="rs-vista"></div>
@@ -143,7 +143,7 @@ function render() {
 
 function textoFiltros(r: { desde: string; hasta: string }) {
   const per = f.periodo === 'todo' ? 'Todo el historial' : `${r.desde} a ${r.hasta}`
-  const g = f.tab === 'gra' ? ` · Granja: ${vista(f.granja)}${f.lote ? ' · Lote ' + f.lote : ''}` : ''
+  const g = f.tab === 'gra' ? ` · Granja: ${vista(f.granja)}${f.lote ? ' · Consecutivo ' + f.lote : ''}` : ''
   return `Periodo: ${per}${g}`
 }
 
@@ -191,7 +191,7 @@ function vistaResumen(vis: Fila[], cur: Fila[], red: Stats) {
   const granjasN = new Set(cur.map((x) => x.granja)).size
   const kpis = [
     kpi('IDN del periodo', fmt(s.idn), `Red Cercafe: ${fmt(red.idn)}`, `<div>${pill(s.idn)}</div>${delta}`, true),
-    kpi('Cerdos inspeccionados', s.n.toLocaleString('es-CO'), `${s.lotes} lotes · ${granjasN} granja${granjasN === 1 ? '' : 's'}`),
+    kpi('Cerdos inspeccionados', s.n.toLocaleString('es-CO'), `${s.lotes} consecutivos · ${granjasN} granja${granjasN === 1 ? '' : 's'}`),
     kpi('Consolidación', fmt(s.consol) + ' %', `Red Cercafe: ${fmt(red.consol)} %`),
     kpi('Neumonía', fmt(s.neum, 1) + ' %', `Red Cercafe: ${fmt(red.neum, 1)} %`),
     kpi('Pleuritis', fmt(s.pleur, 1) + ' %', `Red Cercafe: ${fmt(red.pleur, 1)} %`),
@@ -219,8 +219,8 @@ function vistaResumen(vis: Fila[], cur: Fila[], red: Stats) {
     }
     return { g, sg, ult, serie, asoc: fg[0]?.asociado || '' }
   }).sort((a, b) => b.sg.idn - a.sg.idn)
-  const tabla = `<div class="rs-panel"><h3>Granjas</h3><p class="rs-sub">De mayor a menor IDN en el periodo. Toque una granja para ver sus lotes.</p>
-    <div class="rs-scroll"><table class="rs-table"><thead><tr><th>Granja</th><th>IDN</th><th>Tendencia 12 m</th><th class="n">Lotes</th><th class="n">Cerdos</th><th class="n">Pleuritis</th><th>Último lote</th></tr></thead><tbody>
+  const tabla = `<div class="rs-panel"><h3>Granjas</h3><p class="rs-sub">De mayor a menor IDN en el periodo. Toque una granja para ver sus consecutivos.</p>
+    <div class="rs-scroll"><table class="rs-table"><thead><tr><th>Granja</th><th>IDN</th><th>Tendencia 12 m</th><th class="n">Consecutivos</th><th class="n">Cerdos</th><th class="n">Pleuritis</th><th>Último lote</th></tr></thead><tbody>
     ${filasG.map((r) => `<tr tabindex="0" data-go="${esc(r.g)}"><td><div class="nm">${esc(vista(r.g))}</div>${verAsoc ? `<div class="rs-muted">${esc(nombreAsoc(r.asoc))}</div>` : ''}</td><td>${pill(r.sg.idn)}</td><td>${spark(r.serie)}</td><td class="n">${r.sg.lotes}</td><td class="n">${r.sg.n}</td><td class="n">${fmt(r.sg.pleur, 1)} %</td><td>${esc(r.ult)}</td></tr>`).join('')}
     </tbody></table></div></div>`
 
@@ -230,14 +230,14 @@ function vistaResumen(vis: Fila[], cur: Fila[], red: Stats) {
   const porLote = new Map<string, Fila[]>()
   vis.filter((x) => x.fecha >= limI).forEach((x) => { const k = x.granja + '|' + x.consec; porLote.set(k, [...(porLote.get(k) || []), x]) })
   const alertas = [...porLote.values()].map((fs) => ({ fs, s: stats(fs) })).filter((a) => a.s.idn >= 0.56).sort((a, b) => b.s.idn - a.s.idn).slice(0, 8)
-  const alertasHtml = `<div class="rs-panel"><h3>Lotes para revisar</h3><p class="rs-sub">Últimos 60 días con IDN moderado o severo.</p><div class="rs-alerts">
-    ${alertas.length ? alertas.map((a) => { const k = nivelIdn(a.s.idn), x = a.fs[0]; return `<button type="button" class="rs-alert" data-go="${esc(x.granja)}" data-lote="${esc(x.consec)}"><span class="rs-pill rs-${k}"><i></i>${NIVEL_TXT[k]}</span><span><b>${esc(vista(x.granja))} · lote ${esc(x.consec)}</b><br><span class="rs-muted">${esc(x.fecha)} · ${a.s.n} cerdos · pleuritis ${fmt(a.s.pleur, 0)} %</span></span><b class="val">${fmt(a.s.idn)}</b></button>` }).join('')
-      : '<div class="rs-empty">Ningún lote moderado o severo en los últimos 60 días.</div>'}</div></div>`
+  const alertasHtml = `<div class="rs-panel"><h3>Consecutivos para revisar</h3><p class="rs-sub">Últimos 60 días con IDN moderado o severo.</p><div class="rs-alerts">
+    ${alertas.length ? alertas.map((a) => { const k = nivelIdn(a.s.idn), x = a.fs[0]; return `<button type="button" class="rs-alert" data-go="${esc(x.granja)}" data-lote="${esc(x.consec)}"><span class="rs-pill rs-${k}"><i></i>${NIVEL_TXT[k]}</span><span><b>${esc(vista(x.granja))} · consecutivo ${esc(x.consec)}</b><br><span class="rs-muted">${esc(x.fecha)} · ${a.s.n} cerdos · pleuritis ${fmt(a.s.pleur, 0)} %</span></span><b class="val">${fmt(a.s.idn)}</b></button>` }).join('')
+      : '<div class="rs-empty">Ningún consecutivo moderado o severo en los últimos 60 días.</div>'}</div></div>`
 
   return `<div class="rs-kpis">${kpis}</div><div class="rs-grid2">${tabla}<div class="rs-col">${alertasHtml}</div></div>${otras}`
 }
 
-/* ══ Vista: Granja y lotes ══ */
+/* ══ Vista: Granja y consecutivos ══ */
 
 function vistaGranja(vis: Fila[], r: { desde: string; hasta: string }, red: Stats) {
   if (!f.granja) return '<div class="rs-panel rs-empty">No hay granjas con datos.</div>'
@@ -258,8 +258,8 @@ function vistaGranja(vis: Fila[], r: { desde: string; hasta: string }, red: Stat
   const k = nivelIdn(s.idn)
   return `
   <div class="rs-panel"><div class="rs-farm">
-    <div><div class="rs-muted">${esc(nombreAsoc(asoc))}${f.lote ? ' · Lote ' + esc(f.lote) : ''}</div><h2>${esc(vista(f.granja))}</h2></div>
-    <div class="rs-farm-stats"><div>IDN<b>${fmt(s.idn)}</b></div><div>Estado<span>${pill(s.idn)}</span></div><div>Lotes<b>${s.lotes}</b></div><div>Cerdos<b>${s.n}</b></div><div>Neumonía<b>${fmt(s.neum, 1)} %</b></div><div>Pleuritis<b>${fmt(s.pleur, 1)} %</b></div><div>Red Cercafe<b>${fmt(red.idn)}</b></div></div>
+    <div><div class="rs-muted">${esc(nombreAsoc(asoc))}${f.lote ? ' · Consecutivo ' + esc(f.lote) : ''}</div><h2>${esc(vista(f.granja))}</h2></div>
+    <div class="rs-farm-stats"><div>IDN<b>${fmt(s.idn)}</b></div><div>Estado<span>${pill(s.idn)}</span></div><div>Consecutivos<b>${s.lotes}</b></div><div>Cerdos<b>${s.n}</b></div><div>Neumonía<b>${fmt(s.neum, 1)} %</b></div><div>Pleuritis<b>${fmt(s.pleur, 1)} %</b></div><div>Red Cercafe<b>${fmt(red.idn)}</b></div></div>
   </div></div>
   <div class="rs-panel"><h3>Análisis de resultados</h3>
     <div class="rs-grid2 rs-analisis">
@@ -275,18 +275,18 @@ function vistaGranja(vis: Fila[], r: { desde: string; hasta: string }, red: Stat
         <div class="rs-muted">Escala IDN: Sin lesión = 0 · Leve &lt; 0,56 · Moderado 0,56–0,89 · Severo &gt; 0,89</div></div>
     </div>
   </div>
-  <div class="rs-panel"><h3>IDN por lote</h3><p class="rs-sub">Cada punto es un consecutivo. Líneas guía: 0,56 moderado y 0,90 severo; la punteada verde es la red Cercafe.</p>${graficaLotes(lotes, desde, aFecha(r.hasta), red.idn)}</div>
+  <div class="rs-panel"><h3>IDN por consecutivo</h3><p class="rs-sub">Cada punto es un consecutivo. Líneas guía: 0,56 moderado y 0,90 severo; la punteada verde es la red Cercafe.</p>${graficaLotes(lotes, desde, aFecha(r.hasta), red.idn)}</div>
   <div class="rs-grid2e">
-    <div class="rs-panel"><h3>Mapa pulmonar</h3><p class="rs-sub">Consolidación promedio por lóbulo${f.lote ? ' del lote' : ''}.</p>
+    <div class="rs-panel"><h3>Mapa pulmonar</h3><p class="rs-sub">Consolidación promedio por lóbulo${f.lote ? ' del consecutivo' : ''}.</p>
       <div class="rs-lung"><div>${mp.svg}</div><div class="rs-lobes">${mp.lista}</div></div>
       <div class="rs-legend">${mp.leyenda}</div><div class="rs-callout"><b>Lectura:</b> ${mp.lectura}</div></div>
     <div class="rs-panel"><h3>Cerdos por categoría Madec</h3><p class="rs-sub">0 = sin consolidación · 6 = más de 50 %.</p>${graficaCategorias(s)}
       <h3 style="margin-top:14px">Severidad individual</h3><p class="rs-sub">Escala distinta al IDN: por % de consolidación de cada cerdo.</p>
-      ${barrasSeveridad([{ nombre: f.lote ? 'Lote ' + f.lote : vista(f.granja), valor: 0, s }])}${leyendaSev()}</div>
+      ${barrasSeveridad([{ nombre: f.lote ? 'Consecutivo ' + f.lote : vista(f.granja), valor: 0, s }])}${leyendaSev()}</div>
   </div>
-  <div class="rs-panel"><h3>Lotes</h3><div class="rs-scroll"><table class="rs-table"><thead><tr><th>Consecutivo</th><th>Fecha</th><th class="n">Cerdos</th><th>IDN</th><th class="n">Consolidación</th><th class="n">Neumonía</th><th class="n">Pleuritis</th><th class="n">GDP (kg)</th></tr></thead><tbody>
+  <div class="rs-panel"><h3>Consecutivos</h3><div class="rs-scroll"><table class="rs-table"><thead><tr><th>Consecutivo</th><th>Fecha</th><th class="n">Cerdos</th><th>IDN</th><th class="n">Consolidación</th><th class="n">Neumonía</th><th class="n">Pleuritis</th><th class="n">GDP (kg)</th></tr></thead><tbody>
     ${[...lotes].sort((a, b) => b.fecha.getTime() - a.fecha.getTime()).map((l) => `<tr tabindex="0" class="${l.consec === f.lote ? 'sel' : ''}" data-go="${esc(f.granja)}" data-lote="${l.consec === f.lote ? '' : esc(l.consec)}"><td>${esc(l.consec)}</td><td>${l.fecha.toISOString().slice(0, 10)}</td><td class="n">${l.s.n}</td><td>${pill(l.s.idn)}</td><td class="n">${fmt(l.s.consol)} %</td><td class="n">${fmt(l.s.neum, 1)} %</td><td class="n">${fmt(l.s.pleur, 1)} %</td><td class="n">${fmt(l.s.gdp, 1)}</td></tr>`).join('')}
-  </tbody></table></div><p class="rs-sub" style="margin-top:8px">Toque un lote para ver solo ese lote; tóquelo de nuevo para volver a todos.</p></div>`
+  </tbody></table></div><p class="rs-sub" style="margin-top:8px">Toque un consecutivo para ver solo ese consecutivo; tóquelo de nuevo para volver a todos.</p></div>`
 }
 
 const leyendaSev = () => `<div class="rs-legend">${[['--rs-sin', 'Sin 0 %'], ['--rs-leve', 'Leve ≤ 10 %'], ['--rs-mod', 'Moderada 10–30 %'], ['--rs-sev', 'Severa > 30 %']].map(([c, t]) => `<span><i style="background:var(${c})"></i>${t}</span>`).join('')}</div>`
@@ -314,7 +314,7 @@ function vistaComparativo(cur: Fila[], red: Stats) {
     <div class="rs-panel"><h3>Severidad individual</h3><p class="rs-sub">Clasificación de cada cerdo por su % de consolidación (escala distinta al IDN).</p>${barrasSeveridad(sevFilas)}${leyendaSev()}</div>
   </div>
   <div class="rs-panel"><div class="rs-tabla-hdr"><h3>Resultados por tabla</h3>
-    <div class="rs-seg"><button data-nivel="granja" class="${f.nivelTabla === 'granja' ? 'on' : ''}">Por granja</button><button data-nivel="lote" class="${f.nivelTabla === 'lote' ? 'on' : ''}">Por lote</button></div></div>
+    <div class="rs-seg"><button data-nivel="granja" class="${f.nivelTabla === 'granja' ? 'on' : ''}">Por granja</button><button data-nivel="lote" class="${f.nivelTabla === 'lote' ? 'on' : ''}">Por consecutivo</button></div></div>
     <div class="rs-scroll">${tablaIndicadores(cur)}</div>
     <p class="rs-sub" style="margin-top:8px">El botón Excel exporta esta tabla con los 15 indicadores.</p></div>`
 }
@@ -326,7 +326,7 @@ function filasTabla(cur: Fila[]) {
   }
   const m = new Map<string, Fila[]>()
   cur.forEach((x) => { const k = x.granja + '|' + x.consec; m.set(k, [...(m.get(k) || []), x]) })
-  return [...m.values()].map((fs) => ({ cols: { Granja: vista(fs[0].granja), Lote: fs[0].consec, Fecha: fs.reduce((a, x) => (x.fecha < a ? x.fecha : a), fs[0].fecha) } as Record<string, string>, s: stats(fs) }))
+  return [...m.values()].map((fs) => ({ cols: { Granja: vista(fs[0].granja), Consecutivo: fs[0].consec, Fecha: fs.reduce((a, x) => (x.fecha < a ? x.fecha : a), fs[0].fecha) } as Record<string, string>, s: stats(fs) }))
     .sort((a, b) => a.cols.Granja.localeCompare(b.cols.Granja, 'es') || b.cols.Fecha.localeCompare(a.cols.Fecha))
 }
 
@@ -369,8 +369,8 @@ async function exportarExcel() {
     const X = (window as unknown as { XLSX: any }).XLSX
     const ws = X.utils.json_to_sheet(filas)
     const wb = X.utils.book_new()
-    X.utils.book_append_sheet(wb, ws, f.nivelTabla === 'granja' ? 'Por granja' : 'Por lote')
-    X.writeFile(wb, `ScorePulmonar_${f.nivelTabla === 'granja' ? 'granjas' : 'lotes'}_${r.hasta}.xlsx`)
+    X.utils.book_append_sheet(wb, ws, f.nivelTabla === 'granja' ? 'Por granja' : 'Por consecutivo')
+    X.writeFile(wb, `ScorePulmonar_${f.nivelTabla === 'granja' ? 'granjas' : 'consecutivos'}_${r.hasta}.xlsx`)
   } catch (e) {
     showToast((e as Error).message, 'err', 6000)
   }
@@ -378,7 +378,7 @@ async function exportarExcel() {
 
 function exportarPDF() {
   const titulo = document.title
-  const nombre = f.tab === 'gra' ? vista(f.granja) + (f.lote ? ' lote ' + f.lote : '') : alcance.principal ? nombreAsoc(alcance.principal) : f.asoc ? nombreAsoc(f.asoc) : 'Red Cercafe'
+  const nombre = f.tab === 'gra' ? vista(f.granja) + (f.lote ? ' consecutivo ' + f.lote : '') : alcance.principal ? nombreAsoc(alcance.principal) : f.asoc ? nombreAsoc(f.asoc) : 'Red Cercafe'
   document.title = `Score Pulmonar - ${nombre} - ${hoyISO()}`
   document.body.classList.add('rs-imprimiendo')
   const limpiar = () => { document.title = titulo; document.body.classList.remove('rs-imprimiendo'); window.removeEventListener('afterprint', limpiar) }

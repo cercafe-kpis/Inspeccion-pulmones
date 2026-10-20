@@ -89,7 +89,7 @@ export function analisis(s: Stats) {
   let recomendacion: string
   if (s.idn < 0.56) recomendacion = 'Resultados satisfactorios. Mantener el plan sanitario actual y continuar con el monitoreo periódico.'
   else if (s.idn <= 0.89) recomendacion = 'Presencia de neumonía sin constituir amenaza grave. Revisar factores de riesgo como densidad, ventilación, manejo y plan vacunal.'
-  else recomendacion = 'Presencia de neumonía grave. Se recomienda revisión urgente del plan sanitario, condiciones de bioseguridad y manejo del lote.'
+  else recomendacion = 'Presencia de neumonía grave. Se recomienda revisión urgente del plan sanitario, condiciones de bioseguridad y manejo de la granja.'
   const consol = s.consol <= 10 ? 'Baja consolidación pulmonar.' : s.consol <= 25 ? 'Consolidación moderada — revisar patógenos respiratorios.' : 'Alta consolidación — requiere intervención.'
   const pp = Math.round((s.pleurN / n) * 100)
   const pleur = pp === 0 ? 'Sin casos de pleuritis registrados.'

@@ -33,13 +33,13 @@ export interface PuntoLote { consec: string; fecha: Date; s: Stats }
 
 /** IDN por lote en el tiempo, con guías 0,56 / 0,90 y la red Cercafe. */
 export function graficaLotes(lotes: PuntoLote[], desde: Date, hasta: Date, red: number | null) {
-  if (!lotes.length) return '<div class="rs-empty">Sin lotes en el periodo.</div>'
+  if (!lotes.length) return '<div class="rs-empty">Sin consecutivos en el periodo.</div>'
   const W = 900, H = 240, L = 40, R = 16, T = 12, B = 30
   const a = desde.getTime(), b = Math.max(hasta.getTime(), a + 864e5)
   const ymax = Math.max(1.5, Math.ceil(Math.max(...lotes.map((l) => l.s.idn), red || 0) * 2) / 2)
   const x = (d: Date) => L + ((d.getTime() - a) / (b - a)) * (W - L - R)
   const y = (v: number) => T + (1 - v / ymax) * (H - T - B)
-  let o = `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="IDN por lote">`
+  let o = `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="IDN por consecutivo">`
   for (let v = 0; v <= ymax + 1e-9; v += 0.5) o += `<line x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}" stroke="var(--rs-grid)"/><text x="${L - 8}" y="${y(v) + 4}" text-anchor="end" font-size="11" fill="var(--hint)">${fmt(v, 1)}</text>`
   ;([[0.56, 'moderado'], [0.9, 'severo']] as const).forEach(([v, t]) => {
     o += `<line x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}" stroke="var(--border)" stroke-dasharray="4 4"/><text x="${W - R}" y="${y(v) - 4}" text-anchor="end" font-size="10.5" fill="var(--hint)">${fmt(v)} ${t}</text>`
@@ -57,7 +57,7 @@ export function graficaLotes(lotes: PuntoLote[], desde: Date, hasta: Date, red: 
   o += `<polyline fill="none" stroke="var(--muted)" stroke-width="2" stroke-linejoin="round" points="${ord.map((l) => x(l.fecha) + ',' + y(l.s.idn)).join(' ')}"/>`
   ord.forEach((l) => {
     const k = nivelIdn(l.s.idn)
-    const tip = `<b>Lote ${esc(l.consec)}</b><br>${l.fecha.toLocaleDateString('es-CO')} · ${l.s.n} cerdos<br>IDN ${fmt(l.s.idn)} · ${NIVEL_TXT[k]}`
+    const tip = `<b>Consecutivo ${esc(l.consec)}</b><br>${l.fecha.toLocaleDateString('es-CO')} · ${l.s.n} cerdos<br>IDN ${fmt(l.s.idn)} · ${NIVEL_TXT[k]}`
     o += `<circle cx="${x(l.fecha)}" cy="${y(l.s.idn)}" r="6" fill="var(${NIVEL_VAR[k]})" stroke="#fff" stroke-width="2"/><circle cx="${x(l.fecha)}" cy="${y(l.s.idn)}" r="14" fill="transparent" data-tip="${esc(tip)}"/>`
   })
   return o + '</svg>'

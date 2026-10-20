@@ -179,8 +179,8 @@ input:focus{outline:none;border-color:var(--gm);background:#fff;box-shadow:0 0 0
 /* ══ ADMIN (nuevo — solo lo ve el Rol Administrador) ══ */
 .adm-top{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:12px;}
 .adm-top h2{font-size:19px;font-weight:500;}
-.adm-tabs{display:flex;gap:4px;border-bottom:1px solid var(--border);margin-bottom:12px;}
-.adm-tabs button{flex:1;background:none;border:none;border-bottom:2px solid transparent;padding:10px 4px;font-size:14px;font-weight:600;color:var(--muted);cursor:pointer;margin-bottom:-1px;}
+.adm-tabs{display:flex;gap:4px;border-bottom:1px solid var(--border);margin-bottom:12px;overflow-x:auto;scrollbar-width:none;}
+.adm-tabs button{flex:1;background:none;border:none;border-bottom:2px solid transparent;padding:10px 6px;font-size:14px;font-weight:600;color:var(--muted);cursor:pointer;margin-bottom:-1px;white-space:nowrap;}
 .adm-tabs button.on{color:var(--g);border-bottom-color:var(--g);}
 .adm-bar{display:flex;gap:8px;align-items:center;margin-bottom:10px;}
 .adm-bar input[type=text]{flex:1;height:40px;}

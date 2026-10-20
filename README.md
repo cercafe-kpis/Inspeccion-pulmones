@@ -24,7 +24,7 @@ Sin señal y sin copia guardada del usuario, la app deja **capturar** (para no f
 ### Resultados
 
 - **Resumen**: IDN del periodo con nivel y variación frente al periodo anterior, cerdos/lotes/granjas, consolidación, neumonía, pleuritis, poliserositis, pérdidas GDP (todos con referencia "Red Cercafe" = todas las granjas en el mismo periodo), tabla de granjas con tendencia de 12 meses, lotes para revisar (últimos 60 días, moderado o severo), otras lesiones y artefactos.
-- **Granja y lotes**: análisis y recomendación según el IDN, IDN por lote en el tiempo, mapa pulmonar (consolidación promedio por lóbulo), cerdos por categoría Madec, severidad individual y tabla de lotes (tocar un lote filtra todo a ese lote).
+- **Granja y consecutivos**: análisis y recomendación según el IDN, IDN por lote en el tiempo, mapa pulmonar (consolidación promedio por lóbulo), cerdos por categoría Madec, severidad individual y tabla de lotes (tocar un lote filtra todo a ese lote).
 - **Comparativo**: cualquiera de los 15 indicadores por granja, severidad individual en barras 100 %, tabla por granja o por lote.
 - **Excel** (15 indicadores, por granja o por lote) y **PDF** (imprime la pestaña abierta).
 - Mismas fórmulas del dashboard anterior (`src/features/resultados/indicadores.ts`). Las inspecciones se guardan en el navegador (IndexedDB) y en cada visita solo se descarga lo nuevo.
