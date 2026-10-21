@@ -63,6 +63,164 @@ export function graficaLotes(lotes: PuntoLote[], desde: Date, hasta: Date, red: 
   return o + '</svg>'
 }
 
+/* ── Gráfico de control (SPC) del IDN por consecutivo ── */
+
+/** Reglas de alerta (numeración del cuadro de criterios). */
+export type Regla = 1 | 2 | 3 | 4
+export interface PuntoControl {
+  consec: string; fecha: Date; n: number; idn: number
+  /** σ de ESTE consecutivo (depende de cuántos cerdos tiene) */
+  sigma: number
+  /** distancia a la media en σ */
+  z: number
+  reglas: Regla[]
+  mejora: boolean
+}
+export interface Control { cl: number; puntos: PuntoControl[] }
+
+export const REGLAS: Record<Regla, { nombre: string; criterio: string; color: string }> = {
+  1: { nombre: 'Brote agudo', criterio: 'Un consecutivo por encima del límite superior (+3σ).', color: 'var(--rs-sev)' },
+  4: { nombre: 'Alerta temprana', criterio: '2 de 3 consecutivos seguidos por encima de +2σ (Zona A).', color: '#d9822b' },
+  2: { nombre: 'Foco endémico', criterio: '9 consecutivos seguidos por encima de la media.', color: '#8a2a5a' },
+  3: { nombre: 'Tendencia', criterio: '6 consecutivos seguidos, cada uno con IDN más alto que el anterior (informativa).', color: 'var(--rs-mod)' },
+}
+
+/**
+ * Gráfico de control de Shewhart con zonas y reglas de Western Electric / Nelson, adaptado al IDN:
+ *  - Media (LC) = IDN de la granja (Σ categorías ÷ cerdos) sin los consecutivos fuera de control.
+ *  - σ de cada consecutivo = σz · σ_cerdo / √cerdos (método de Laney): σ_cerdo es la desviación de las
+ *    categorías de los cerdos y σz la variación real entre consecutivos (rango móvil ÷ 1,128, mínimo 1).
+ *  - Los consecutivos por fuera de ±3σ se sacan del cálculo y se recalcula (hasta 3 veces, base ≥ 5).
+ *  - Solo alarman las subidas (un IDN bajo es buena noticia); 9 seguidos por debajo = mejora sostenida.
+ */
+export function calcularControl(lotes: PuntoLote[]): Control | null {
+  const ord = lotes.filter((l) => l.s.n > 0).sort((a, b) => a.fecha.getTime() - b.fecha.getTime())
+  if (ord.length < 5) return null
+  const limites = (base: PuntoLote[]) => {
+    const N = base.reduce((a, l) => a + l.s.n, 0)
+    const cl = base.reduce((a, l) => a + l.s.idn * l.s.n, 0) / N
+    let ss = 0
+    base.forEach((l) => l.s.cats.forEach((c, k) => (ss += c * (k - cl) ** 2)))
+    const sw = Math.sqrt(ss / Math.max(1, N - 1))
+    let sz = 1
+    if (sw > 1e-9 && base.length > 1) {
+      const z = base.map((l) => (l.s.idn - cl) / (sw / Math.sqrt(l.s.n)))
+      let mr = 0
+      for (let i = 1; i < z.length; i++) mr += Math.abs(z[i] - z[i - 1])
+      sz = Math.max(1, mr / (z.length - 1) / 1.128)
+    }
+    return { cl, sigma: (n: number) => Math.max(1e-6, sz * (sw / Math.sqrt(n))) }
+  }
+  let base = ord
+  let lim = limites(base)
+  for (let it = 0; it < 3; it++) {
+    const dentro = base.filter((l) => Math.abs(l.s.idn - lim.cl) <= 3 * lim.sigma(l.s.n) + 1e-9)
+    if (dentro.length === base.length || dentro.length < 5) break
+    base = dentro
+    lim = limites(base)
+  }
+  const cl = lim.cl
+  const p: PuntoControl[] = ord.map((l) => {
+    const sigma = lim.sigma(l.s.n)
+    return { consec: l.consec, fecha: l.fecha, n: l.s.n, idn: l.s.idn, sigma, z: (l.s.idn - cl) / sigma, reglas: [], mejora: false }
+  })
+  const marcar = (i: number, r: Regla) => { if (!p[i].reglas.includes(r)) p[i].reglas.push(r) }
+  const E = 1e-9
+  // 1) Brote agudo
+  p.forEach((q, i) => { if (q.z > 3 + E) marcar(i, 1) })
+  // 4) Alerta temprana: 2 de 3 seguidos por encima de +2σ
+  for (let i = 2; i < p.length; i++) {
+    const ventana = [i - 2, i - 1, i].filter((k) => p[k].z > 2 + E)
+    if (ventana.length >= 2) ventana.forEach((k) => marcar(k, 4))
+  }
+  // 2) Foco endémico (9 o más por encima de la media) y mejora sostenida (9 o más por debajo)
+  for (let i = 0; i < p.length; ) {
+    const arriba = p[i].z > E, abajo = p[i].z < -E
+    let j = i
+    while (j < p.length && (arriba ? p[j].z > E : abajo ? p[j].z < -E : false)) j++
+    if (j - i >= 9) for (let k = i; k < j; k++) { if (arriba) marcar(k, 2); else p[k].mejora = true }
+    i = Math.max(j, i + 1)
+  }
+  // 3) Tendencia: 6 seguidos, cada uno mayor que el anterior
+  for (let i = 0; i < p.length; ) {
+    let j = i + 1
+    while (j < p.length && p[j].idn > p[j - 1].idn + E) j++
+    if (j - i >= 6) for (let k = i; k < j; k++) marcar(k, 3)
+    i = Math.max(j, i + 1)
+  }
+  p.forEach((q) => q.reglas.sort((a, b) => [1, 4, 2, 3].indexOf(a) - [1, 4, 2, 3].indexOf(b)))
+  return { cl, puntos: p }
+}
+
+export function graficaControl(c: Control, seleccionado: string) {
+  const p = c.puntos, n = p.length
+  const W = 900, L = 42, R = 58, T = 18, Hp = 230
+  const rot = n > 14
+  const B = rot ? 58 : 30, H = T + Hp + B
+  const ymax = Math.max(1, Math.ceil(Math.max(...p.map((q) => Math.max(q.idn, c.cl + 3 * q.sigma))) * 4) / 4)
+  const paso = (W - L - R) / n
+  const x = (i: number) => L + paso * (i + 0.5)
+  const y = (v: number) => T + (1 - Math.min(ymax, Math.max(0, v)) / ymax) * Hp
+  const xs = (i: number, lado: 0 | 1) => L + paso * (i + lado)
+  const nivel = (q: PuntoControl, k: number) => c.cl + k * q.sigma
+  let o = `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="Gráfico de control del IDN">`
+  // Zonas (franjas escalonadas: cada consecutivo tiene su σ)
+  const franja = (k1: number, k2: number, color: string) => {
+    let a = '', b = ''
+    p.forEach((q, i) => { a += `${xs(i, 0)},${y(nivel(q, k2))} ${xs(i, 1)},${y(nivel(q, k2))} `; b = `${xs(i, 1)},${y(nivel(q, k1))} ${xs(i, 0)},${y(nivel(q, k1))} ` + b })
+    return `<polygon points="${a}${b}" fill="${color}"/>`
+  }
+  o += franja(-1, 1, '#e7f1ea') + franja(1, 2, '#fbf3d9') + franja(2, 3, '#fbe6d2') + franja(-2, -1, '#f1f4f1') + franja(-3, -2, '#f6f7f6')
+  const tick = ymax > 2 ? 0.5 : 0.25
+  for (let v = 0; v <= ymax + 1e-9; v += tick) o += `<line x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}" stroke="var(--rs-grid)" stroke-opacity=".6"/><text x="${L - 8}" y="${y(v) + 4}" text-anchor="end" font-size="11" fill="var(--hint)">${fmt(v, 2)}</text>`
+  const linea = (k: number, color: string, ancho: number, guion: string) =>
+    `<polyline points="${p.map((q, i) => `${xs(i, 0)},${y(nivel(q, k))} ${xs(i, 1)},${y(nivel(q, k))}`).join(' ')}" fill="none" stroke="${color}" stroke-width="${ancho}"${guion ? ` stroke-dasharray="${guion}"` : ''}/>`
+  o += linea(3, 'var(--rs-sev)', 1.6, '') + linea(2, '#d9822b', 1.2, '5 4') + linea(1, '#5b7fb5', 1, '3 4')
+  o += linea(-1, '#5b7fb5', 0.8, '3 4') + linea(-2, '#d9822b', 0.8, '5 4') + linea(-3, 'var(--rs-sev)', 0.8, '')
+  o += `<line x1="${L}" x2="${W - R}" y1="${y(c.cl)}" y2="${y(c.cl)}" stroke="var(--rs-leve)" stroke-width="2"/>`
+  // Etiquetas a la derecha (con la σ del último consecutivo)
+  const u = p[n - 1]
+  const etiquetas: [number, string, string][] = [[3, 'LSC +3σ', 'var(--rs-sev)'], [2, '+2σ', '#d9822b'], [1, '+1σ', '#5b7fb5'], [0, 'LC ' + fmt(c.cl), 'var(--rs-leve)']]
+  if (c.cl - 3 * u.sigma > 0.02) etiquetas.push([-3, 'LIC −3σ', 'var(--rs-sev)'])
+  etiquetas.forEach(([k, t, col]) => { o += `<text x="${W - R + 5}" y="${y(nivel(u, k)) + 4}" font-size="10.5" font-weight="600" fill="${col}">${t}</text>` })
+  o += `<line x1="${L}" x2="${W - R}" y1="${y(0)}" y2="${y(0)}" stroke="var(--border)"/>`
+  // Serie y puntos
+  o += `<polyline fill="none" stroke="var(--muted)" stroke-width="1.6" stroke-linejoin="round" points="${p.map((q, i) => x(i) + ',' + y(q.idn)).join(' ')}"/>`
+  p.forEach((q, i) => {
+    const fill = q.z > 3 ? 'var(--rs-sev)' : q.z > 2 ? '#d9822b' : q.z > 1 ? '#c9a227' : q.mejora ? 'var(--rs-leve)' : '#7d776b'
+    const zona = q.z > 3 ? 'Por encima del LSC (+3σ)' : q.z > 2 ? 'Zona A (+2σ a +3σ)' : q.z > 1 ? 'Zona B (+1σ a +2σ)' : q.z >= -1 ? 'Zona C (cerca de la media)' : q.z >= -2 ? 'Zona B inferior' : 'Zona A inferior o más abajo'
+    const alertas = q.reglas.map((r) => `${r}) ${REGLAS[r].nombre}`).concat(q.mejora ? ['Mejora sostenida'] : [])
+    const tip = `<b>Consecutivo ${esc(q.consec)}</b><br>${q.fecha.toLocaleDateString('es-CO')} · ${q.n} cerdos<br>IDN ${fmt(q.idn)} · ${zona}${alertas.length ? '<br><b>' + alertas.join(' · ') + '</b>' : ''}`
+    if (q.consec === seleccionado) o += `<circle cx="${x(i)}" cy="${y(q.idn)}" r="12" fill="none" stroke="var(--text)" stroke-width="1.5"/>`
+    if (q.reglas.length) o += `<circle cx="${x(i)}" cy="${y(q.idn)}" r="9.5" fill="none" stroke="${REGLAS[q.reglas[0]].color}" stroke-width="2"/>`
+    o += `<circle cx="${x(i)}" cy="${y(q.idn)}" r="${q.reglas.length ? 6.5 : 5}" fill="${fill}" stroke="#fff" stroke-width="2"/>`
+    if (q.reglas.length) o += `<text x="${x(i)}" y="${y(q.idn) - 14}" text-anchor="middle" font-size="10" font-weight="700" fill="${REGLAS[q.reglas[0]].color}" paint-order="stroke" stroke="#fff" stroke-width="3">${q.reglas.join('·')}</text>`
+    o += `<circle cx="${x(i)}" cy="${y(q.idn)}" r="14" fill="transparent" data-tip="${esc(tip)}"/>`
+    o += rot
+      ? `<text transform="translate(${x(i) + 3},${y(0) + 12}) rotate(-50)" text-anchor="end" font-size="10.5" fill="var(--hint)">${esc(q.consec)}</text>`
+      : `<text x="${x(i)}" y="${H - 10}" text-anchor="middle" font-size="10.5" fill="var(--hint)">${esc(q.consec)}</text>`
+  })
+  return o + '</svg>'
+}
+
+/** Texto de lectura del gráfico de control, en palabras sencillas. */
+export function lecturaControl(c: Control) {
+  const fecha = (q: PuntoControl) => q.fecha.toLocaleDateString('es-CO', { day: 'numeric', month: 'short' })
+  const lista = (e: PuntoControl[]) => e.map((q) => `${esc(q.consec)} (${fecha(q)})`).join(', ')
+  const rango = (e: PuntoControl[]) => `${esc(e[0].consec)} (${fecha(e[0])}) al ${esc(e[e.length - 1].consec)} (${fecha(e[e.length - 1])})`
+  const con = (r: Regla) => c.puntos.filter((q) => q.reglas.includes(r))
+  const t: string[] = []
+  const r1 = con(1), r4 = con(4), r2 = con(2), r3 = con(3), mej = c.puntos.filter((q) => q.mejora)
+  if (r1.length) t.push(`🔴 <b>1) Brote agudo:</b> ${r1.length === 1 ? 'el consecutivo' : 'los consecutivos'} ${lista(r1)} ${r1.length === 1 ? 'superó' : 'superaron'} el límite superior. Algo puntual pasó en ese grupo: revise origen de los lechones, ventilación, densidad, vacunación o enfermedades de ese momento.`)
+  if (r4.length) t.push(`🟠 <b>4) Alerta temprana:</b> ${lista(r4)} quedaron cerca del límite (Zona A). Todavía no es un brote, pero la granja se está acercando: vale la pena revisar antes de que empeore.`)
+  if (r2.length) t.push(`🟣 <b>2) Foco endémico:</b> ${r2.length} consecutivos seguidos por encima de la media, del ${rango(r2)}. La neumonía subió de nivel y se está volviendo parte de lo normal en la granja; hay que revisar el manejo general y el plan sanitario, no un lote puntual.`)
+  if (r3.length) t.push(`🟡 <b>3) Tendencia (informativa):</b> del ${rango(r3)} cada consecutivo salió peor que el anterior.`)
+  if (mej.length) t.push(`✅ <b>Mejora sostenida:</b> ${mej.length} consecutivos seguidos por debajo de la media, del ${rango(mej)}. Lo que se cambió en ese tiempo está funcionando.`)
+  if (!t.length) t.push('Ningún criterio de alerta: la granja se comporta de forma <b>estable</b>; las subidas y bajadas que se ven son su variación normal.')
+  if (c.puntos.length < 9) t.push(`<span class="rs-muted">Con ${c.puntos.length} consecutivos todavía no se puede evaluar el foco endémico (necesita 9). Use "Últimos 12 meses" o "Todo el historial".</span>`)
+  return t.join('<br>')
+}
+
 /* ── Mapa pulmonar: consolidación promedio por lóbulo ── */
 const BINS = [1, 3, 6, 10]
 const binOf = (v: number) => (v < BINS[0] ? 1 : v < BINS[1] ? 2 : v < BINS[2] ? 3 : v < BINS[3] ? 4 : 5)

@@ -2,7 +2,7 @@ import './resultados.css'
 import { estado } from '../../state'
 import { calcularAlcance, cargarDatos, codigosDeFiltro, type Alcance, type Catalogo, type Fila } from './datos'
 import {
-  columnasGranjas, esc, explicacionCategorias, fmt, graficaCategorias, graficaLotes, mapaPulmonar, pill, spark,
+  calcularControl, columnasGranjas, esc, graficaControl, lecturaControl, REGLAS, explicacionCategorias, fmt, graficaCategorias, graficaLotes, mapaPulmonar, pill, spark,
   type FilaComp, type PuntoLote,
 } from './graficas'
 import { analisis, INDICADORES, nivelIdn, NIVEL_TXT, stats, type Stats } from './indicadores'
@@ -239,6 +239,26 @@ function vistaResumen(vis: Fila[], cur: Fila[], red: Stats) {
 
 /* ══ Vista: Granja y consecutivos ══ */
 
+function panelControl(lotes: PuntoLote[]) {
+  const c = calcularControl(lotes)
+  const criterios = ([1, 4, 2, 3] as const).map((r) => `<tr><td><b style="color:${REGLAS[r].color}">${r}) ${REGLAS[r].nombre}</b></td><td>${REGLAS[r].criterio}</td></tr>`).join('')
+  const ayuda = `<details class="rs-ayuda"><summary>¿Cómo leer y cómo se calcula?</summary>
+    <p><b>Para qué sirve:</b> separa la variación normal de la granja (las subidas y bajadas de siempre) de los cambios que de verdad indican un problema.</p>
+    <p><b>Líneas:</b> LC (verde) = IDN promedio de la granja · +1σ (azul) · +2σ (naranja) · LSC +3σ (rojo). <b>Zonas:</b> C (verde claro) es lo normal; B (amarillo) y A (naranja) son cada vez menos comunes; por encima del LSC es muy raro que pase por azar.</p>
+    <p><b>Puntos:</b> el color indica la zona en la que cayó el consecutivo; el aro y el número encima indican qué alerta disparó.</p>
+    <table class="rs-table rs-cats"><thead><tr><th>Alerta</th><th>Criterio</th></tr></thead><tbody>${criterios}
+      <tr><td><b style="color:var(--rs-leve)">Mejora sostenida</b></td><td>9 consecutivos seguidos por debajo de la media (buena noticia).</td></tr></tbody></table>
+    <p><b>Cálculo:</b> σ es la variación típica entre consecutivos de la granja, medida con la diferencia entre un consecutivo y el siguiente y ajustada al número de cerdos (con pocos cerdos las zonas se abren, porque el IDN se mueve más por azar). Los consecutivos que se salen del LSC se sacan del cálculo de la media para que un caso raro no la mueva.</p>
+    <p><b>Por qué 3σ, 9 y 6:</b> si la granja está estable, cada criterio pasa por azar solo unas 3 veces de cada 1.000 (Shewhart, Western Electric, Nelson). Por eso, cuando aparece, casi seguro algo cambió. Las alertas 2 y 3 necesitan varios consecutivos: se ven mejor con "Últimos 12 meses" o "Todo el historial".</p>
+    <p>Los límites salen de la historia de la propia granja, no de la red Cercafe: <b>estable no quiere decir bueno</b>. Para comparar con la red use la gráfica de arriba.</p></details>`
+  if (!c) return `<div class="rs-panel"><h3>Gráfico de control (SPC)</h3><p class="rs-sub">Se necesitan al menos 5 consecutivos en el periodo para calcular los límites. Pruebe con un periodo más largo.</p></div>`
+  return `<div class="rs-panel"><h3>Gráfico de control (SPC)</h3><p class="rs-sub">IDN de cada consecutivo, en orden, frente a las zonas de variación normal de la granja. Toque un punto para ver el detalle.</p>
+    ${graficaControl(c, f.lote)}
+    <div class="rs-legend"><span><i style="background:#e7f1ea"></i>Zona C · normal</span><span><i style="background:#fbf3d9"></i>Zona B · +1σ a +2σ</span><span><i style="background:#fbe6d2"></i>Zona A · +2σ a +3σ</span><span><i style="background:var(--rs-sev)"></i>LSC +3σ</span>
+      ${([1, 4, 2, 3] as const).map((r) => `<span><i style="background:none;border:2px solid ${REGLAS[r].color};border-radius:50%"></i>${r}) ${REGLAS[r].nombre}</span>`).join('')}</div>
+    <div class="rs-callout"><b>Lectura:</b><br>${lecturaControl(c)}</div>${ayuda}</div>`
+}
+
 function vistaGranja(vis: Fila[], r: { desde: string; hasta: string }, red: Stats) {
   if (!f.granja) return '<div class="rs-panel rs-empty">No hay granjas con datos.</div>'
   const deGranja = vis.filter((x) => x.granja === f.granja && enRango(x, r))
@@ -276,6 +296,7 @@ function vistaGranja(vis: Fila[], r: { desde: string; hasta: string }, red: Stat
     </div>
   </div>
   <div class="rs-panel"><h3>IDN por consecutivo</h3><p class="rs-sub">Cada punto es un consecutivo. Líneas guía: 0,56 moderado y 0,90 severo; la punteada verde es la red Cercafe.</p>${graficaLotes(lotes, desde, aFecha(r.hasta), red.idn)}</div>
+  ${panelControl(lotes)}
   <div class="rs-grid2e">
     <div class="rs-panel"><h3>Mapa pulmonar</h3><p class="rs-sub">Consolidación promedio por lóbulo${f.lote ? ' del consecutivo' : ''}.</p>
       <div class="rs-lung"><div>${mp.svg}</div><div class="rs-lobes">${mp.lista}</div></div>
