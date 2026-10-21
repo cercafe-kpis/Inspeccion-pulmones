@@ -26,7 +26,7 @@ export const LISTAS = {
 export type NombreLista = (typeof LISTAS)[keyof typeof LISTAS]
 
 /** Súbalo en cada cambio: se ve en el pie de la app para confirmar que el celular ya tiene la versión nueva. */
-export const APP_VERSION = '2026-10-21-g'
+export const APP_VERSION = '2026-10-21-h'
 
 /** Scopes que ya usaba la app (no cambiar: así MSAL reutiliza el token guardado y nadie tiene que volver a iniciar sesión). */
 export const SCOPES_LOGIN = ['User.Read', 'Sites.ReadWrite.All']
