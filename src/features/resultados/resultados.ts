@@ -279,7 +279,9 @@ function vistaGranja(vis: Fila[], r: { desde: string; hasta: string }, red: Stat
     const fecha = fs.reduce((m, x) => (x.fecha && x.fecha < m ? x.fecha : m), fs[0].fecha || r.hasta)
     return { consec, fecha: aFecha(fecha || r.hasta), s: stats(fs) }
   })
-  const desde = r.desde === '0000-00-00' ? (lotes.length ? new Date(Math.min(...lotes.map((l) => l.fecha.getTime())) - 15 * 864e5) : aFecha(r.hasta)) : aFecha(r.desde)
+  // La gráfica arranca un poco antes del primer consecutivo de la granja (no en el inicio del periodo), para no dejar meses vacíos.
+  const primero = lotes.length ? Math.min(...lotes.map((l) => l.fecha.getTime())) : aFecha(r.hasta).getTime()
+  const desde = new Date(Math.max(primero - 10 * 864e5, r.desde === '0000-00-00' ? 0 : aFecha(r.desde).getTime()))
   const an = analisis(s)
   const mp = mapaPulmonar(s)
   const asoc = deGranja[0]?.asociado || datos?.cat.asociadoDe[f.granja.toUpperCase()] || ''
