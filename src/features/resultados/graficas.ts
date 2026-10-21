@@ -158,11 +158,12 @@ export function calcularControl(lotes: PuntoLote[]): Control | null {
 
 export function graficaControl(c: Control, seleccionado: string) {
   const p = c.puntos, n = p.length
-  const W = 900, L = 42, R = 76, T = 18, Hp = 230
+  const W = 900, L = 42, R = 76, T = 30, Hp = 230 // T: espacio arriba para el número de la alerta
   const rot = n > 14
   const B = rot ? 58 : 30, H = T + Hp + B
   const nivel = (k: number) => c.cl + k * c.sigma
-  const ymax = Math.max(1, Math.ceil(Math.max(nivel(3), ...p.map((q) => q.idn)) * 4) / 4)
+  // 8 % de aire sobre el punto más alto para que su aro y su número no se corten
+  const ymax = Math.max(1, Math.ceil(Math.max(nivel(3), ...p.map((q) => q.idn)) * 1.08 * 4) / 4)
   const paso = (W - L - R) / n
   const x = (i: number) => L + paso * (i + 0.5)
   const y = (v: number) => T + (1 - Math.min(ymax, Math.max(0, v)) / ymax) * Hp
