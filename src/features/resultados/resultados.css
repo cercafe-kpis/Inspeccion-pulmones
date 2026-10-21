@@ -144,3 +144,10 @@
 .rs-ayuda summary{cursor:pointer;color:var(--g);font-weight:600;}
 .rs-ayuda p{margin:6px 0 0;}
 .rs-pdf .rs-ayuda summary{display:none;}
+
+/* Leyenda del gráfico de control, en palabras sencillas */
+.rs-leyenda-spc{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px;margin-top:10px;font-size:12.5px;color:var(--muted);}
+.rs-leyenda-spc > div{display:flex;flex-direction:column;gap:5px;background:var(--surface,#faf8f4);border:1px solid var(--borderl);border-radius:var(--rs);padding:10px 12px;}
+.rs-leyenda-spc > div > b{color:var(--text);font-size:13px;margin-bottom:2px;}
+.rs-leyenda-spc span{display:flex;align-items:center;gap:7px;}
+.rs-leyenda-spc i{flex:0 0 14px;width:14px;height:12px;border-radius:3px;display:inline-block;border:1px solid rgba(0,0,0,.08);}

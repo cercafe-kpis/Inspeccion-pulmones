@@ -83,6 +83,9 @@ export const INDICADORES: { key: keyof Stats; lbl: string; fmt: (v: number) => s
   { key: 'ambos', lbl: 'Ambos artefactos', fmt: (v) => nf(v, 1) + '%', grupo: 'Artefactos' },
 ]
 
+/** Meta de consolidación pulmonar promedio (documento de referencia del proyecto: debe ser menor al 5 %). */
+export const META_CONSOL = 5
+
 /** Texto de análisis y recomendación según el IDN (mismos textos del dashboard anterior). */
 export function analisis(s: Stats) {
   const n = s.n || 1
@@ -90,7 +93,7 @@ export function analisis(s: Stats) {
   if (s.idn < 0.56) recomendacion = 'Resultados satisfactorios. Mantener el plan sanitario actual y continuar con el monitoreo periódico.'
   else if (s.idn <= 0.89) recomendacion = 'Presencia de neumonía sin constituir amenaza grave. Revisar factores de riesgo como densidad, ventilación, manejo y plan vacunal.'
   else recomendacion = 'Presencia de neumonía grave. Se recomienda revisión urgente del plan sanitario, condiciones de bioseguridad y manejo de la granja.'
-  const consol = s.consol <= 10 ? 'Baja consolidación pulmonar.' : s.consol <= 25 ? 'Consolidación moderada — revisar patógenos respiratorios.' : 'Alta consolidación — requiere intervención.'
+  const consol = s.consol < META_CONSOL ? `Dentro de la meta (menor a ${META_CONSOL} %).` : `Por encima de la meta de ${META_CONSOL} % — revisar patógenos respiratorios, ventilación y plan vacunal.`
   const pp = Math.round((s.pleurN / n) * 100)
   const pleur = pp === 0 ? 'Sin casos de pleuritis registrados.'
     : pp <= 20 ? `Frecuencia baja (${pp}%). Monitorear evolución.`

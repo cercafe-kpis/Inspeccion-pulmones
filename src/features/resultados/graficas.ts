@@ -79,10 +79,10 @@ export interface PuntoControl {
 export interface Control { cl: number; puntos: PuntoControl[] }
 
 export const REGLAS: Record<Regla, { nombre: string; criterio: string; color: string }> = {
-  1: { nombre: 'Brote agudo', criterio: 'Un consecutivo por encima del límite superior (+3σ).', color: 'var(--rs-sev)' },
-  4: { nombre: 'Alerta temprana', criterio: '2 de 3 consecutivos seguidos por encima de +2σ (Zona A).', color: '#d9822b' },
-  2: { nombre: 'Foco endémico', criterio: '9 consecutivos seguidos por encima de la media.', color: '#8a2a5a' },
-  3: { nombre: 'Tendencia', criterio: '6 consecutivos seguidos, cada uno con IDN más alto que el anterior (informativa).', color: 'var(--rs-mod)' },
+  1: { nombre: 'Brote agudo', criterio: 'un consecutivo pasó la línea roja.', color: 'var(--rs-sev)' },
+  4: { nombre: 'Alerta temprana', criterio: '2 de 3 consecutivos seguidos cayeron en la franja naranja.', color: '#d9822b' },
+  2: { nombre: 'Foco endémico', criterio: '9 consecutivos seguidos por encima de lo normal (línea verde).', color: '#8a2a5a' },
+  3: { nombre: 'Tendencia', criterio: '6 consecutivos seguidos, cada uno peor que el anterior (solo informativa).', color: 'var(--rs-mod)' },
 }
 
 /**
@@ -154,7 +154,7 @@ export function calcularControl(lotes: PuntoLote[]): Control | null {
 
 export function graficaControl(c: Control, seleccionado: string) {
   const p = c.puntos, n = p.length
-  const W = 900, L = 42, R = 58, T = 18, Hp = 230
+  const W = 900, L = 42, R = 76, T = 18, Hp = 230
   const rot = n > 14
   const B = rot ? 58 : 30, H = T + Hp + B
   const ymax = Math.max(1, Math.ceil(Math.max(...p.map((q) => Math.max(q.idn, c.cl + 3 * q.sigma))) * 4) / 4)
@@ -180,15 +180,15 @@ export function graficaControl(c: Control, seleccionado: string) {
   o += `<line x1="${L}" x2="${W - R}" y1="${y(c.cl)}" y2="${y(c.cl)}" stroke="var(--rs-leve)" stroke-width="2"/>`
   // Etiquetas a la derecha (con la σ del último consecutivo)
   const u = p[n - 1]
-  const etiquetas: [number, string, string][] = [[3, 'LSC +3σ', 'var(--rs-sev)'], [2, '+2σ', '#d9822b'], [1, '+1σ', '#5b7fb5'], [0, 'LC ' + fmt(c.cl), 'var(--rs-leve)']]
-  if (c.cl - 3 * u.sigma > 0.02) etiquetas.push([-3, 'LIC −3σ', 'var(--rs-sev)'])
+  const etiquetas: [number, string, string][] = [[3, 'Límite', 'var(--rs-sev)'], [2, 'Alerta', '#d9822b'], [1, 'Atención', '#5b7fb5'], [0, 'Normal ' + fmt(c.cl), 'var(--rs-leve)']]
+  if (c.cl - 3 * u.sigma > 0.02) etiquetas.push([-3, 'Límite inf.', 'var(--rs-sev)'])
   etiquetas.forEach(([k, t, col]) => { o += `<text x="${W - R + 5}" y="${y(nivel(u, k)) + 4}" font-size="10.5" font-weight="600" fill="${col}">${t}</text>` })
   o += `<line x1="${L}" x2="${W - R}" y1="${y(0)}" y2="${y(0)}" stroke="var(--border)"/>`
   // Serie y puntos
   o += `<polyline fill="none" stroke="var(--muted)" stroke-width="1.6" stroke-linejoin="round" points="${p.map((q, i) => x(i) + ',' + y(q.idn)).join(' ')}"/>`
   p.forEach((q, i) => {
     const fill = q.z > 3 ? 'var(--rs-sev)' : q.z > 2 ? '#d9822b' : q.z > 1 ? '#c9a227' : q.mejora ? 'var(--rs-leve)' : '#7d776b'
-    const zona = q.z > 3 ? 'Por encima del LSC (+3σ)' : q.z > 2 ? 'Zona A (+2σ a +3σ)' : q.z > 1 ? 'Zona B (+1σ a +2σ)' : q.z >= -1 ? 'Zona C (cerca de la media)' : q.z >= -2 ? 'Zona B inferior' : 'Zona A inferior o más abajo'
+    const zona = q.z > 3 ? 'Por encima del límite' : q.z > 2 ? 'Franja naranja (muy alto)' : q.z > 1 ? 'Franja amarilla (un poco alto)' : q.z >= -1 ? 'Franja verde (normal)' : 'Más bajo de lo normal (bien)'
     const alertas = q.reglas.map((r) => `${r}) ${REGLAS[r].nombre}`).concat(q.mejora ? ['Mejora sostenida'] : [])
     const tip = `<b>Consecutivo ${esc(q.consec)}</b><br>${q.fecha.toLocaleDateString('es-CO')} · ${q.n} cerdos<br>IDN ${fmt(q.idn)} · ${zona}${alertas.length ? '<br><b>' + alertas.join(' · ') + '</b>' : ''}`
     if (q.consec === seleccionado) o += `<circle cx="${x(i)}" cy="${y(q.idn)}" r="12" fill="none" stroke="var(--text)" stroke-width="1.5"/>`
@@ -304,18 +304,24 @@ export interface FilaComp { nombre: string; valor: number; s: Stats }
  * Columnas por granja (una columna por granja, todas a lo ancho). Si es IDN, cada columna lleva el color
  * de su nivel. En pantallas angostas el gráfico se desliza de lado para no apretar las granjas.
  */
-export function columnasGranjas(filas: FilaComp[], esIdn: boolean, f: (v: number) => string, ref: number | null) {
+export function columnasGranjas(filas: FilaComp[], esIdn: boolean, f: (v: number) => string, ref: number | null, meta: number | null = null) {
   if (!filas.length) return '<div class="rs-empty">Sin datos en el periodo.</div>'
   const n = filas.length
   const L = 44, R = 14, T = 22, Hp = 260, Bl = 112 // Bl: espacio para los nombres inclinados
   const col = 26
   const W = Math.max(640, L + n * col + R), cw = (W - L - R) / n
   const H = T + Hp + Bl
-  const vmax = Math.max(...filas.map((r) => r.valor), ref || 0)
-  const ymax = esIdn ? Math.max(1.5, Math.ceil(vmax * 2) / 2) : vmax > 0 ? vmax * 1.1 : 1
+  const vmax = Math.max(...filas.map((r) => r.valor), ref || 0, meta || 0)
+  // Escala con números redondos (IDN cada 0,25; los demás con paso 1, 2, 2,5 o 5 × 10^k)
+  let pasoY = 0.25
+  if (!esIdn) {
+    const crudo = (vmax > 0 ? vmax * 1.08 : 1) / 4, pot = 10 ** Math.floor(Math.log10(crudo))
+    pasoY = ([1, 2, 2.5, 5, 10].find((m) => m * pot >= crudo) || 10) * pot
+  }
+  const ymax = esIdn ? Math.max(1.5, Math.ceil(vmax * 2) / 2) : Math.max(pasoY, Math.ceil((vmax * 1.08) / pasoY) * pasoY)
   const y = (v: number) => T + (1 - v / ymax) * Hp
   let o = `<div class="rs-colscroll"><svg viewBox="0 0 ${W} ${H}" width="100%" style="min-width:${Math.round(W * 0.72)}px" role="img" aria-label="Comparativo por granja">`
-  const ticks = esIdn ? Math.round(ymax / 0.25) : 4 // IDN: líneas cada 0,25
+  const ticks = Math.round(ymax / pasoY)
   for (let i = 0; i <= ticks; i++) {
     const v = (ymax * i) / ticks
     o += `<line x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}" stroke="var(--rs-grid)"/><text x="${L - 6}" y="${y(v) + 4}" text-anchor="end" font-size="10.5" fill="var(--hint)">${esIdn ? fmt(v, 2) : f(v)}</text>`
@@ -323,7 +329,7 @@ export function columnasGranjas(filas: FilaComp[], esIdn: boolean, f: (v: number
   filas.forEach((r, i) => {
     const w = Math.min(cw * 0.66, 34), x = L + i * cw + (cw - w) / 2, cx = L + i * cw + cw / 2
     const top = y(Math.max(0, r.valor)), h = Math.max(1.5, y(0) - top), rr = Math.min(3, h)
-    const color = esIdn ? `var(${NIVEL_VAR[nivelIdn(r.valor)]})` : 'var(--g)'
+    const color = esIdn ? `var(${NIVEL_VAR[nivelIdn(r.valor)]})` : meta != null && r.valor >= meta ? 'var(--rs-sev)' : 'var(--g)'
     const tip = esc(`<b>${r.nombre}</b><br>${f(r.valor)}${esIdn ? ' · ' + NIVEL_TXT[nivelIdn(r.valor)] : ''}<br>${r.s.n} cerdos`)
     o += `<path d="M${x},${y(0)} L${x},${y(0) - h + rr} Q${x},${y(0) - h} ${x + rr},${y(0) - h} L${x + w - rr},${y(0) - h} Q${x + w},${y(0) - h} ${x + w},${y(0) - h + rr} L${x + w},${y(0)} Z" fill="${color}" data-tip="${tip}"/>`
     o += `<text x="${cx}" y="${y(0) - h - 4}" text-anchor="middle" font-size="9.5" fill="var(--muted)">${f(r.valor)}</text>`
@@ -336,6 +342,11 @@ export function columnasGranjas(filas: FilaComp[], esIdn: boolean, f: (v: number
     // La etiqueta va del lado de las columnas más bajas para no taparlas.
     const izq = filas[0].valor <= filas[n - 1].valor
     o += `<text x="${izq ? L + 4 : W - R}" y="${y(ref) - 5}" text-anchor="${izq ? 'start' : 'end'}" font-size="10.5" fill="var(--text)" paint-order="stroke" stroke="#fff" stroke-width="3">Red Cercafe ${f(ref)}</text>`
+  }
+  if (meta != null) {
+    const izq = filas[0].valor <= filas[n - 1].valor
+    o += `<line x1="${L}" x2="${W - R}" y1="${y(meta)}" y2="${y(meta)}" stroke="var(--rs-sev)" stroke-width="1.6" stroke-dasharray="8 4"/>`
+    o += `<text x="${izq ? L + 4 : W - R}" y="${y(meta) - 5}" text-anchor="${izq ? 'start' : 'end'}" font-size="10.5" font-weight="600" fill="var(--rs-sev)" paint-order="stroke" stroke="#fff" stroke-width="3">Meta: menor a ${f(meta)}</text>`
   }
   return o + '</svg></div>'
 }

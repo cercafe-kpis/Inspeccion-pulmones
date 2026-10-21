@@ -5,7 +5,7 @@ import {
   calcularControl, columnasGranjas, esc, graficaControl, lecturaControl, REGLAS, explicacionCategorias, fmt, graficaCategorias, graficaLotes, mapaPulmonar, pill, spark,
   type FilaComp, type PuntoLote,
 } from './graficas'
-import { analisis, INDICADORES, nivelIdn, NIVEL_TXT, stats, type Stats } from './indicadores'
+import { analisis, INDICADORES, META_CONSOL, nivelIdn, NIVEL_TXT, stats, type Stats } from './indicadores'
 
 /**
  * Pestaña "Resultados" (antes: dashboard Score Pulmonar aparte).
@@ -192,7 +192,7 @@ function vistaResumen(vis: Fila[], cur: Fila[], red: Stats) {
   const kpis = [
     kpi('IDN del periodo', fmt(s.idn), `Red Cercafe: ${fmt(red.idn)}`, `<div>${pill(s.idn)}</div>${delta}`, true),
     kpi('Cerdos inspeccionados', s.n.toLocaleString('es-CO'), `${s.lotes} consecutivos · ${granjasN} granja${granjasN === 1 ? '' : 's'}`),
-    kpi('Consolidación', fmt(s.consol) + ' %', `Red Cercafe: ${fmt(red.consol)} %`),
+    kpi('Consolidación', fmt(s.consol) + ' %', `Red Cercafe: ${fmt(red.consol)} % · Meta &lt; ${META_CONSOL} %`, s.consol >= META_CONSOL ? '<div class="rs-delta bad">Por encima de la meta</div>' : '<div class="rs-delta good">Dentro de la meta</div>'),
     kpi('Neumonía', fmt(s.neum, 1) + ' %', `Red Cercafe: ${fmt(red.neum, 1)} %`),
     kpi('Pleuritis', fmt(s.pleur, 1) + ' %', `Red Cercafe: ${fmt(red.pleur, 1)} %`),
     kpi('Poliserositis', fmt(s.poliser, 1) + ' %', `Red Cercafe: ${fmt(red.poliser, 1)} %`),
@@ -244,18 +244,26 @@ function panelControl(lotes: PuntoLote[]) {
   const criterios = ([1, 4, 2, 3] as const).map((r) => `<tr><td><b style="color:${REGLAS[r].color}">${r}) ${REGLAS[r].nombre}</b></td><td>${REGLAS[r].criterio}</td></tr>`).join('')
   const ayuda = `<details class="rs-ayuda"><summary>¿Cómo leer y cómo se calcula?</summary>
     <p><b>Para qué sirve:</b> separa la variación normal de la granja (las subidas y bajadas de siempre) de los cambios que de verdad indican un problema.</p>
-    <p><b>Líneas:</b> LC (verde) = IDN promedio de la granja · +1σ (azul) · +2σ (naranja) · LSC +3σ (rojo). <b>Zonas:</b> C (verde claro) es lo normal; B (amarillo) y A (naranja) son cada vez menos comunes; por encima del LSC es muy raro que pase por azar.</p>
+    <p><b>Líneas:</b> la verde gruesa es el IDN normal (promedio) de la granja. Las otras marcan qué tan lejos está cada consecutivo de lo normal: azul = un poco (1σ), naranja = bastante (2σ), roja = límite (3σ). En estadística a estas distancias se les llama σ (sigma) y a las franjas Zona C (verde), B (amarilla) y A (naranja).</p>
     <p><b>Puntos:</b> el color indica la zona en la que cayó el consecutivo; el aro y el número encima indican qué alerta disparó.</p>
     <table class="rs-table rs-cats"><thead><tr><th>Alerta</th><th>Criterio</th></tr></thead><tbody>${criterios}
-      <tr><td><b style="color:var(--rs-leve)">Mejora sostenida</b></td><td>9 consecutivos seguidos por debajo de la media (buena noticia).</td></tr></tbody></table>
+      <tr><td><b style="color:var(--rs-leve)">Mejora sostenida</b></td><td>9 consecutivos seguidos por debajo de lo normal (buena noticia).</td></tr></tbody></table>
     <p><b>Cálculo:</b> σ es la variación típica entre consecutivos de la granja, medida con la diferencia entre un consecutivo y el siguiente y ajustada al número de cerdos (con pocos cerdos las zonas se abren, porque el IDN se mueve más por azar). Los consecutivos que se salen del LSC se sacan del cálculo de la media para que un caso raro no la mueva.</p>
     <p><b>Por qué 3σ, 9 y 6:</b> si la granja está estable, cada criterio pasa por azar solo unas 3 veces de cada 1.000 (Shewhart, Western Electric, Nelson). Por eso, cuando aparece, casi seguro algo cambió. Las alertas 2 y 3 necesitan varios consecutivos: se ven mejor con "Últimos 12 meses" o "Todo el historial".</p>
     <p>Los límites salen de la historia de la propia granja, no de la red Cercafe: <b>estable no quiere decir bueno</b>. Para comparar con la red use la gráfica de arriba.</p></details>`
   if (!c) return `<div class="rs-panel"><h3>Gráfico de control (SPC)</h3><p class="rs-sub">Se necesitan al menos 5 consecutivos en el periodo para calcular los límites. Pruebe con un periodo más largo.</p></div>`
   return `<div class="rs-panel"><h3>Gráfico de control (SPC)</h3><p class="rs-sub">IDN de cada consecutivo, en orden, frente a las zonas de variación normal de la granja. Toque un punto para ver el detalle.</p>
     ${graficaControl(c, f.lote)}
-    <div class="rs-legend"><span><i style="background:#e7f1ea"></i>Zona C · normal</span><span><i style="background:#fbf3d9"></i>Zona B · +1σ a +2σ</span><span><i style="background:#fbe6d2"></i>Zona A · +2σ a +3σ</span><span><i style="background:var(--rs-sev)"></i>LSC +3σ</span>
-      ${([1, 4, 2, 3] as const).map((r) => `<span><i style="background:none;border:2px solid ${REGLAS[r].color};border-radius:50%"></i>${r}) ${REGLAS[r].nombre}</span>`).join('')}</div>
+    <div class="rs-leyenda-spc">
+      <div><b>Color de la franja = qué tan alto salió el consecutivo</b>
+        <span><i style="background:#e7f1ea"></i>Verde: normal para esta granja</span>
+        <span><i style="background:#fbf3d9"></i>Amarilla: un poco alto (atención)</span>
+        <span><i style="background:#fbe6d2"></i>Naranja: muy alto (alerta)</span>
+        <span><i style="background:var(--rs-sev);height:3px"></i>Línea roja: límite. Pasarla casi nunca es por azar</span></div>
+      <div><b>Aro alrededor del punto = se encendió una alerta (el número encima dice cuál)</b>
+        ${([1, 4, 2, 3] as const).map((r) => `<span><i style="background:none;border:2px solid ${REGLAS[r].color};border-radius:50%"></i><b style="color:${REGLAS[r].color}">${r}) ${REGLAS[r].nombre}:</b> ${REGLAS[r].criterio}</span>`).join('')}
+        <span class="rs-muted">Si no hay aros, no hay alertas.</span></div>
+    </div>
     <div class="rs-callout"><b>Lectura:</b><br>${lecturaControl(c)}</div>${ayuda}</div>`
 }
 
@@ -305,7 +313,7 @@ function vistaGranja(vis: Fila[], r: { desde: string; hasta: string }, red: Stat
       ${explicacionCategorias()}</div>
   </div>
   <div class="rs-panel"><h3>Consecutivos</h3><div class="rs-scroll"><table class="rs-table"><thead><tr><th>Consecutivo</th><th>Fecha</th><th class="n">Cerdos</th><th>IDN</th><th class="n">Consolidación</th><th class="n">Neumonía</th><th class="n">Pleuritis</th><th class="n">GDP (kg)</th></tr></thead><tbody>
-    ${[...lotes].sort((a, b) => b.fecha.getTime() - a.fecha.getTime()).map((l) => `<tr tabindex="0" class="${l.consec === f.lote ? 'sel' : ''}" data-go="${esc(f.granja)}" data-lote="${l.consec === f.lote ? '' : esc(l.consec)}"><td>${esc(l.consec)}</td><td>${l.fecha.toISOString().slice(0, 10)}</td><td class="n">${l.s.n}</td><td>${pill(l.s.idn)}</td><td class="n">${fmt(l.s.consol)} %</td><td class="n">${fmt(l.s.neum, 1)} %</td><td class="n">${fmt(l.s.pleur, 1)} %</td><td class="n">${fmt(l.s.gdp, 1)}</td></tr>`).join('')}
+    ${[...lotes].sort((a, b) => b.fecha.getTime() - a.fecha.getTime()).map((l) => `<tr tabindex="0" class="${l.consec === f.lote ? 'sel' : ''}" data-go="${esc(f.granja)}" data-lote="${l.consec === f.lote ? '' : esc(l.consec)}"><td>${esc(l.consec)}</td><td>${l.fecha.toISOString().slice(0, 10)}</td><td class="n">${l.s.n}</td><td>${pill(l.s.idn)}</td><td class="n"${l.s.consol >= META_CONSOL ? ' style="color:var(--rs-sev);font-weight:600" title="Por encima de la meta"' : ''}>${fmt(l.s.consol)} %</td><td class="n">${fmt(l.s.neum, 1)} %</td><td class="n">${fmt(l.s.pleur, 1)} %</td><td class="n">${fmt(l.s.gdp, 1)}</td></tr>`).join('')}
   </tbody></table></div><p class="rs-sub" style="margin-top:8px">Toque un consecutivo para ver solo ese consecutivo; tóquelo de nuevo para volver a todos.</p></div>`
 }
 
@@ -329,7 +337,7 @@ function vistaComparativo(cur: Fila[], red: Stats) {
     : ref != null ? `<div class="rs-legend"><span>┆ Red Cercafe ${ind.fmt(ref)}</span></div>` : ''
   return `<div class="rs-panel rs-comp-g"><div class="rs-tabla-hdr" style="margin-bottom:0"><h3>${ind.lbl} por granja</h3>
     <div class="rs-seg"><button data-orden="asc" class="${f.orden === 'asc' ? 'on' : ''}">Menor a mayor</button><button data-orden="desc" class="${f.orden === 'desc' ? 'on' : ''}">Mayor a menor</button></div></div>
-    <p class="rs-sub">${esIdn ? 'Color según la escala IDN.' : ''} Línea punteada: red Cercafe. Toque una columna para ver el detalle; en el celular deslice el gráfico de lado para ver todas las granjas.</p>${columnasGranjas(filas, esIdn, ind.fmt, ref)}${leyIdn}</div>
+    <p class="rs-sub">${esIdn ? 'Color según la escala IDN.' : ''}${ind.key === 'consol' ? ` Línea roja: meta (menor a ${META_CONSOL} %); en rojo las granjas por encima.` : ''} Línea punteada: red Cercafe. Toque una columna para ver el detalle; en el celular deslice el gráfico de lado para ver todas las granjas.</p>${columnasGranjas(filas, esIdn, ind.fmt, ref, ind.key === 'consol' ? META_CONSOL : null)}${leyIdn}</div>
   <div class="rs-panel"><div class="rs-tabla-hdr"><h3>Resultados por tabla</h3>
     <div class="rs-seg"><button data-nivel="granja" class="${f.nivelTabla === 'granja' ? 'on' : ''}">Por granja</button><button data-nivel="lote" class="${f.nivelTabla === 'lote' ? 'on' : ''}">Por consecutivo</button></div></div>
     <div class="rs-scroll">${tablaIndicadores(cur)}</div>
