@@ -175,7 +175,9 @@ export function columnasGranjas(filas: FilaComp[], esIdn: boolean, f: (v: number
   o += `<line x1="${L}" x2="${W - R}" y1="${y(0)}" y2="${y(0)}" stroke="var(--border)"/>`
   if (ref != null) {
     o += `<line x1="${L}" x2="${W - R}" y1="${y(ref)}" y2="${y(ref)}" stroke="var(--text)" stroke-width="1.5" stroke-dasharray="4 3"/>`
-    o += `<text x="${W - R}" y="${y(ref) - 5}" text-anchor="end" font-size="10.5" fill="var(--text)">Red Cercafe ${f(ref)}</text>`
+    // La etiqueta va del lado de las columnas más bajas para no taparlas.
+    const izq = filas[0].valor <= filas[n - 1].valor
+    o += `<text x="${izq ? L + 4 : W - R}" y="${y(ref) - 5}" text-anchor="${izq ? 'start' : 'end'}" font-size="10.5" fill="var(--text)" paint-order="stroke" stroke="#fff" stroke-width="3">Red Cercafe ${f(ref)}</text>`
   }
   return o + '</svg></div>'
 }

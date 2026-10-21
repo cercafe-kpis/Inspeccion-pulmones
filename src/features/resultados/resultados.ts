@@ -14,10 +14,10 @@ import { analisis, INDICADORES, nivelIdn, NIVEL_TXT, stats, type Stats } from '.
  */
 
 type Tab = 'res' | 'gra' | 'com'
-interface Filtros { asoc: string; periodo: string; desde: string; hasta: string; tab: Tab; granja: string; lote: string; ind: string; nivelTabla: 'granja' | 'lote' }
+interface Filtros { asoc: string; periodo: string; desde: string; hasta: string; tab: Tab; granja: string; lote: string; ind: string; nivelTabla: 'granja' | 'lote'; orden: 'asc' | 'desc' }
 
 const KEY_FILTROS = 'insp_pulmones_resultados_filtros'
-let f: Filtros = { asoc: '', periodo: '12', desde: '', hasta: '', tab: 'res', granja: '', lote: '', ind: 'idn', nivelTabla: 'granja' }
+let f: Filtros = { asoc: '', periodo: '12', desde: '', hasta: '', tab: 'res', granja: '', lote: '', ind: 'idn', nivelTabla: 'granja', orden: 'asc' }
 try { f = { ...f, ...JSON.parse(localStorage.getItem(KEY_FILTROS) || '{}') } } catch { /* sin filtros guardados */ }
 const guardarFiltros = () => { try { localStorage.setItem(KEY_FILTROS, JSON.stringify(f)) } catch { /* nada */ } }
 
@@ -165,6 +165,7 @@ function enlazar() {
     el.addEventListener('click', go)
     el.addEventListener('keydown', (e) => { if ((e as KeyboardEvent).key === 'Enter') go() })
   })
+  document.querySelectorAll<HTMLButtonElement>('[data-orden]').forEach((b) => b.addEventListener('click', () => { f.orden = b.dataset.orden as 'asc' | 'desc'; render() }))
   document.querySelectorAll<HTMLButtonElement>('[data-nivel]').forEach((b) => b.addEventListener('click', () => { f.nivelTabla = b.dataset.nivel as 'granja' | 'lote'; render() }))
 }
 
@@ -300,12 +301,14 @@ function vistaComparativo(cur: Fila[], red: Stats) {
   const ind = INDICADORES.find((i) => i.key === f.ind) || INDICADORES[0]
   const pg = porGranja(cur)
   if (!pg.length) return '<div class="rs-panel rs-empty">No hay inspecciones en este periodo.</div>'
-  const filas: FilaComp[] = pg.map((x) => ({ nombre: vista(x.g), valor: x.s[ind.key] as number, s: x.s })).sort((a, b) => b.valor - a.valor)
+  const filas: FilaComp[] = pg.map((x) => ({ nombre: vista(x.g), valor: x.s[ind.key] as number, s: x.s })).sort((a, b) => (f.orden === 'asc' ? a.valor - b.valor : b.valor - a.valor))
   const esIdn = ind.key === 'idn'
   const ref = ind.key === 'gdp' ? null : (red[ind.key] as number)
   const leyIdn = esIdn ? `<div class="rs-legend">${(['sin', 'leve', 'mod', 'sev'] as const).map((k) => `<span class="rs-pill rs-${k}"><i></i>${NIVEL_TXT[k]}</span>`).join('')}${ref != null ? `<span>┆ Red Cercafe ${ind.fmt(ref)}</span>` : ''}</div>`
     : ref != null ? `<div class="rs-legend"><span>┆ Red Cercafe ${ind.fmt(ref)}</span></div>` : ''
-  return `<div class="rs-panel rs-comp-g"><h3>${ind.lbl} por granja</h3><p class="rs-sub">${esIdn ? 'Color según la escala IDN.' : 'De mayor a menor.'} Línea punteada: red Cercafe. Toque una columna para ver el detalle; en el celular deslice el gráfico de lado para ver todas las granjas.</p>${columnasGranjas(filas, esIdn, ind.fmt, ref)}${leyIdn}</div>
+  return `<div class="rs-panel rs-comp-g"><div class="rs-tabla-hdr" style="margin-bottom:0"><h3>${ind.lbl} por granja</h3>
+    <div class="rs-seg"><button data-orden="asc" class="${f.orden === 'asc' ? 'on' : ''}">Menor a mayor</button><button data-orden="desc" class="${f.orden === 'desc' ? 'on' : ''}">Mayor a menor</button></div></div>
+    <p class="rs-sub">${esIdn ? 'Color según la escala IDN.' : ''} Línea punteada: red Cercafe. Toque una columna para ver el detalle; en el celular deslice el gráfico de lado para ver todas las granjas.</p>${columnasGranjas(filas, esIdn, ind.fmt, ref)}${leyIdn}</div>
   <div class="rs-panel"><div class="rs-tabla-hdr"><h3>Resultados por tabla</h3>
     <div class="rs-seg"><button data-nivel="granja" class="${f.nivelTabla === 'granja' ? 'on' : ''}">Por granja</button><button data-nivel="lote" class="${f.nivelTabla === 'lote' ? 'on' : ''}">Por consecutivo</button></div></div>
     <div class="rs-scroll">${tablaIndicadores(cur)}</div>
