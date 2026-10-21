@@ -142,6 +142,44 @@ export function graficaCategorias(s: Stats) {
 
 export interface FilaComp { nombre: string; valor: number; s: Stats }
 
+/**
+ * Columnas por granja (una columna por granja, todas a lo ancho). Si es IDN, cada columna lleva el color
+ * de su nivel. En pantallas angostas el gráfico se desliza de lado para no apretar las granjas.
+ */
+export function columnasGranjas(filas: FilaComp[], esIdn: boolean, f: (v: number) => string, ref: number | null) {
+  if (!filas.length) return '<div class="rs-empty">Sin datos en el periodo.</div>'
+  const n = filas.length
+  const L = 44, R = 14, T = 22, Hp = 260, Bl = 112 // Bl: espacio para los nombres inclinados
+  const col = 26
+  const W = Math.max(640, L + n * col + R), cw = (W - L - R) / n
+  const H = T + Hp + Bl
+  const vmax = Math.max(...filas.map((r) => r.valor), ref || 0)
+  const ymax = esIdn ? Math.max(1.5, Math.ceil(vmax * 2) / 2) : vmax > 0 ? vmax * 1.1 : 1
+  const y = (v: number) => T + (1 - v / ymax) * Hp
+  let o = `<div class="rs-colscroll"><svg viewBox="0 0 ${W} ${H}" width="100%" style="min-width:${Math.round(W * 0.72)}px" role="img" aria-label="Comparativo por granja">`
+  const ticks = esIdn ? Math.round(ymax / 0.25) : 4 // IDN: líneas cada 0,25
+  for (let i = 0; i <= ticks; i++) {
+    const v = (ymax * i) / ticks
+    o += `<line x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}" stroke="var(--rs-grid)"/><text x="${L - 6}" y="${y(v) + 4}" text-anchor="end" font-size="10.5" fill="var(--hint)">${esIdn ? fmt(v, 2) : f(v)}</text>`
+  }
+  filas.forEach((r, i) => {
+    const w = Math.min(cw * 0.66, 34), x = L + i * cw + (cw - w) / 2, cx = L + i * cw + cw / 2
+    const top = y(Math.max(0, r.valor)), h = Math.max(1.5, y(0) - top), rr = Math.min(3, h)
+    const color = esIdn ? `var(${NIVEL_VAR[nivelIdn(r.valor)]})` : 'var(--g)'
+    const tip = esc(`<b>${r.nombre}</b><br>${f(r.valor)}${esIdn ? ' · ' + NIVEL_TXT[nivelIdn(r.valor)] : ''}<br>${r.s.n} cerdos`)
+    o += `<path d="M${x},${y(0)} L${x},${y(0) - h + rr} Q${x},${y(0) - h} ${x + rr},${y(0) - h} L${x + w - rr},${y(0) - h} Q${x + w},${y(0) - h} ${x + w},${y(0) - h + rr} L${x + w},${y(0)} Z" fill="${color}" data-tip="${tip}"/>`
+    o += `<text x="${cx}" y="${y(0) - h - 4}" text-anchor="middle" font-size="9.5" fill="var(--muted)">${f(r.valor)}</text>`
+    const nom = r.nombre.length > 20 ? r.nombre.slice(0, 19) + '…' : r.nombre
+    o += `<text transform="translate(${cx + 3},${y(0) + 10}) rotate(-50)" text-anchor="end" font-size="11" fill="var(--text)">${esc(nom)}</text>`
+  })
+  o += `<line x1="${L}" x2="${W - R}" y1="${y(0)}" y2="${y(0)}" stroke="var(--border)"/>`
+  if (ref != null) {
+    o += `<line x1="${L}" x2="${W - R}" y1="${y(ref)}" y2="${y(ref)}" stroke="var(--text)" stroke-width="1.5" stroke-dasharray="4 3"/>`
+    o += `<text x="${W - R}" y="${y(ref) - 5}" text-anchor="end" font-size="10.5" fill="var(--text)">Red Cercafe ${f(ref)}</text>`
+  }
+  return o + '</svg></div>'
+}
+
 /** Barras horizontales por granja. Si es IDN, cada barra lleva el color de su nivel. */
 export function barrasGranjas(filas: FilaComp[], esIdn: boolean, f: (v: number) => string, ref: number | null) {
   if (!filas.length) return '<div class="rs-empty">Sin datos en el periodo.</div>'

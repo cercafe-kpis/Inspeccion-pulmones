@@ -2,7 +2,7 @@ import './resultados.css'
 import { estado } from '../../state'
 import { calcularAlcance, cargarDatos, codigosDeFiltro, type Alcance, type Catalogo, type Fila } from './datos'
 import {
-  barrasGranjas, esc, explicacionCategorias, fmt, graficaCategorias, graficaLotes, mapaPulmonar, pill, spark,
+  columnasGranjas, esc, explicacionCategorias, fmt, graficaCategorias, graficaLotes, mapaPulmonar, pill, spark,
   type FilaComp, type PuntoLote,
 } from './graficas'
 import { analisis, INDICADORES, nivelIdn, NIVEL_TXT, stats, type Stats } from './indicadores'
@@ -305,7 +305,7 @@ function vistaComparativo(cur: Fila[], red: Stats) {
   const ref = ind.key === 'gdp' ? null : (red[ind.key] as number)
   const leyIdn = esIdn ? `<div class="rs-legend">${(['sin', 'leve', 'mod', 'sev'] as const).map((k) => `<span class="rs-pill rs-${k}"><i></i>${NIVEL_TXT[k]}</span>`).join('')}${ref != null ? `<span>┆ Red Cercafe ${ind.fmt(ref)}</span>` : ''}</div>`
     : ref != null ? `<div class="rs-legend"><span>┆ Red Cercafe ${ind.fmt(ref)}</span></div>` : ''
-  return `<div class="rs-panel rs-comp-g"><h3>${ind.lbl} por granja</h3><p class="rs-sub">${esIdn ? 'Color según la escala IDN.' : 'De mayor a menor.'} Línea punteada: red Cercafe.</p>${barrasGranjas(filas, esIdn, ind.fmt, ref)}${leyIdn}</div>
+  return `<div class="rs-panel rs-comp-g"><h3>${ind.lbl} por granja</h3><p class="rs-sub">${esIdn ? 'Color según la escala IDN.' : 'De mayor a menor.'} Línea punteada: red Cercafe. Toque una columna para ver el detalle; en el celular deslice el gráfico de lado para ver todas las granjas.</p>${columnasGranjas(filas, esIdn, ind.fmt, ref)}${leyIdn}</div>
   <div class="rs-panel"><div class="rs-tabla-hdr"><h3>Resultados por tabla</h3>
     <div class="rs-seg"><button data-nivel="granja" class="${f.nivelTabla === 'granja' ? 'on' : ''}">Por granja</button><button data-nivel="lote" class="${f.nivelTabla === 'lote' ? 'on' : ''}">Por consecutivo</button></div></div>
     <div class="rs-scroll">${tablaIndicadores(cur)}</div>
