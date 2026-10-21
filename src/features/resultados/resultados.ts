@@ -2,7 +2,7 @@ import './resultados.css'
 import { estado } from '../../state'
 import { calcularAlcance, cargarDatos, codigosDeFiltro, type Alcance, type Catalogo, type Fila } from './datos'
 import {
-  calcularControl, columnasGranjas, esc, graficaControl, lecturaControl, REGLAS, explicacionCategorias, fmt, graficaCategorias, graficaLotes, mapaPulmonar, pill, spark,
+  calcularControl, columnasGranjas, MIN_CERDOS, esc, graficaControl, lecturaControl, REGLAS, explicacionCategorias, fmt, graficaCategorias, graficaLotes, mapaPulmonar, pill, spark,
   type FilaComp, type PuntoLote,
 } from './graficas'
 import { analisis, INDICADORES, META_CONSOL, nivelIdn, NIVEL_TXT, stats, type Stats } from './indicadores'
@@ -248,10 +248,10 @@ function panelControl(lotes: PuntoLote[]) {
     <p><b>Puntos:</b> el color indica la zona en la que cayó el consecutivo; el aro y el número encima indican qué alerta disparó.</p>
     <table class="rs-table rs-cats"><thead><tr><th>Alerta</th><th>Criterio</th></tr></thead><tbody>${criterios}
       <tr><td><b style="color:var(--rs-leve)">Mejora sostenida</b></td><td>9 consecutivos seguidos por debajo de lo normal (buena noticia).</td></tr></tbody></table>
-    <p><b>Cálculo:</b> σ es la variación típica entre consecutivos de la granja, medida con la diferencia entre un consecutivo y el siguiente y ajustada al número de cerdos (con pocos cerdos las zonas se abren, porque el IDN se mueve más por azar). Los consecutivos que se salen del LSC se sacan del cálculo de la media para que un caso raro no la mueva.</p>
+    <p><b>Cálculo:</b> σ es la variación típica entre consecutivos de esta granja, medida con la diferencia entre un consecutivo y el siguiente y calculada para el número de cerdos que normalmente se inspeccionan en la granja. Los consecutivos con menos de ${MIN_CERDOS} cerdos se muestran como círculo vacío pero no entran al cálculo ni a las alertas, porque con tan pocos animales el IDN depende demasiado del azar. Los consecutivos que pasan el límite tampoco entran al cálculo de lo normal, para que un caso raro no lo mueva.</p>
     <p><b>Por qué 3σ, 9 y 6:</b> si la granja está estable, cada criterio pasa por azar solo unas 3 veces de cada 1.000 (Shewhart, Western Electric, Nelson). Por eso, cuando aparece, casi seguro algo cambió. Las alertas 2 y 3 necesitan varios consecutivos: se ven mejor con "Últimos 12 meses" o "Todo el historial".</p>
     <p>Los límites salen de la historia de la propia granja, no de la red Cercafe: <b>estable no quiere decir bueno</b>. Para comparar con la red use la gráfica de arriba.</p></details>`
-  if (!c) return `<div class="rs-panel"><h3>Gráfico de control (SPC)</h3><p class="rs-sub">Se necesitan al menos 5 consecutivos en el periodo para calcular los límites. Pruebe con un periodo más largo.</p></div>`
+  if (!c) return `<div class="rs-panel"><h3>Gráfico de control (SPC)</h3><p class="rs-sub">Se necesitan al menos 5 consecutivos con ${MIN_CERDOS} o más cerdos en el periodo para calcular los límites. Pruebe con un periodo más largo.</p></div>`
   return `<div class="rs-panel"><h3>Gráfico de control (SPC)</h3><p class="rs-sub">IDN de cada consecutivo, en orden, frente a las zonas de variación normal de la granja. Toque un punto para ver el detalle.</p>
     ${graficaControl(c, f.lote)}
     <div class="rs-leyenda-spc">
@@ -259,7 +259,8 @@ function panelControl(lotes: PuntoLote[]) {
         <span><i style="background:#e7f1ea"></i>Verde: normal para esta granja</span>
         <span><i style="background:#fbf3d9"></i>Amarilla: un poco alto (atención)</span>
         <span><i style="background:#fbe6d2"></i>Naranja: muy alto (alerta)</span>
-        <span><i style="background:var(--rs-sev);height:3px"></i>Línea roja: límite. Pasarla casi nunca es por azar</span></div>
+        <span><i style="background:var(--rs-sev);height:3px"></i>Línea roja: límite. Pasarla casi nunca es por azar</span>
+        <span><i style="background:#fff;border:2px dashed #7d776b;border-radius:50%"></i>Círculo vacío: menos de ${MIN_CERDOS} cerdos, no se evalúa</span></div>
       <div><b>Aro alrededor del punto = se encendió una alerta (el número encima dice cuál)</b>
         ${([1, 4, 2, 3] as const).map((r) => `<span><i style="background:none;border:2px solid ${REGLAS[r].color};border-radius:50%"></i><b style="color:${REGLAS[r].color}">${r}) ${REGLAS[r].nombre}:</b> ${REGLAS[r].criterio}</span>`).join('')}
         <span class="rs-muted">Si no hay aros, no hay alertas.</span></div>
