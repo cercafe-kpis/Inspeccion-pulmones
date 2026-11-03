@@ -81,11 +81,12 @@ export interface Control { cl: number; sigma: number; nTipico: number; puntos: P
 /** Consecutivos con menos cerdos que esto no se usan para calcular ni para las alertas (su IDN depende demasiado del azar). */
 export const MIN_CERDOS = 10
 
-export const REGLAS: Record<Regla, { nombre: string; criterio: string; color: string }> = {
-  1: { nombre: 'Brote agudo', criterio: 'un consecutivo pasó la línea roja.', color: 'var(--rs-sev)' },
-  4: { nombre: 'Alerta temprana', criterio: '2 de 3 consecutivos seguidos cayeron en la franja naranja.', color: '#d9822b' },
-  2: { nombre: 'Foco endémico', criterio: '9 consecutivos seguidos por encima de lo normal (línea verde).', color: '#8a2a5a' },
-  3: { nombre: 'Tendencia', criterio: '6 consecutivos seguidos, cada uno peor que el anterior (solo informativa).', color: 'var(--rs-mod)' },
+/** Cada regla se muestra con una letra (A–D, de la más grave a la informativa) para que no se confunda con un número o un decimal. */
+export const REGLAS: Record<Regla, { letra: string; nombre: string; criterio: string; color: string }> = {
+  1: { letra: 'A', nombre: 'Brote agudo', criterio: 'un consecutivo pasó la línea roja.', color: 'var(--rs-sev)' },
+  4: { letra: 'B', nombre: 'Alerta temprana', criterio: '2 de 3 consecutivos seguidos cayeron en la franja naranja.', color: '#d9822b' },
+  2: { letra: 'C', nombre: 'Foco endémico', criterio: '9 consecutivos seguidos por encima de lo normal (línea verde).', color: '#8a2a5a' },
+  3: { letra: 'D', nombre: 'Tendencia', criterio: '6 consecutivos seguidos, cada uno peor que el anterior (solo informativa).', color: 'var(--rs-mod)' },
 }
 
 /**
@@ -187,12 +188,12 @@ export function graficaControl(c: Control, seleccionado: string) {
   p.forEach((q, i) => {
     const fill = q.pocos ? '#fff' : q.z > 3 ? 'var(--rs-sev)' : q.z > 2 ? '#d9822b' : q.z > 1 ? '#c9a227' : q.mejora ? 'var(--rs-leve)' : '#7d776b'
     const zona = q.pocos ? `Pocos cerdos (menos de ${MIN_CERDOS}): no se evalúa` : q.z > 3 ? 'Por encima del límite' : q.z > 2 ? 'Franja naranja (muy alto)' : q.z > 1 ? 'Franja amarilla (un poco alto)' : q.z >= -1 ? 'Franja verde (normal)' : 'Más bajo de lo normal (bien)'
-    const alertas = q.reglas.map((r) => `${r}) ${REGLAS[r].nombre}`).concat(q.mejora ? ['Mejora sostenida'] : [])
+    const alertas = q.reglas.map((r) => `${REGLAS[r].letra}) ${REGLAS[r].nombre}`).concat(q.mejora ? ['Mejora sostenida'] : [])
     const tip = `<b>Consecutivo ${esc(q.consec)}</b><br>${q.fecha.toLocaleDateString('es-CO')} · ${q.n} cerdos<br>IDN ${fmt(q.idn)} · ${zona}${alertas.length ? '<br><b>' + alertas.join(' · ') + '</b>' : ''}`
     if (q.consec === seleccionado) o += `<circle cx="${x(i)}" cy="${y(q.idn)}" r="12" fill="none" stroke="var(--text)" stroke-width="1.5"/>`
     if (q.reglas.length) o += `<circle cx="${x(i)}" cy="${y(q.idn)}" r="9.5" fill="none" stroke="${REGLAS[q.reglas[0]].color}" stroke-width="2"/>`
     o += `<circle cx="${x(i)}" cy="${y(q.idn)}" r="${q.reglas.length ? 6.5 : 5}" fill="${fill}" stroke="${q.pocos ? '#7d776b' : '#fff'}" stroke-width="2"${q.pocos ? ' stroke-dasharray="2 2"' : ''}/>`
-    if (q.reglas.length) o += `<text x="${x(i)}" y="${y(q.idn) - 14}" text-anchor="middle" font-size="10" font-weight="700" fill="${REGLAS[q.reglas[0]].color}" paint-order="stroke" stroke="#fff" stroke-width="3">${q.reglas.join('·')}</text>`
+    if (q.reglas.length) o += `<text x="${x(i)}" y="${y(q.idn) - 14}" text-anchor="middle" font-size="10" font-weight="700" fill="${REGLAS[q.reglas[0]].color}" paint-order="stroke" stroke="#fff" stroke-width="3">${q.reglas.map((r) => REGLAS[r].letra).join('·')}</text>`
     o += `<circle cx="${x(i)}" cy="${y(q.idn)}" r="14" fill="transparent" data-tip="${esc(tip)}"/>`
     o += rot
       ? `<text transform="translate(${x(i) + 3},${y(0) + 12}) rotate(-50)" text-anchor="end" font-size="10.5" fill="var(--hint)">${esc(q.consec)}</text>`
@@ -209,10 +210,10 @@ export function lecturaControl(c: Control) {
   const con = (r: Regla) => c.puntos.filter((q) => q.reglas.includes(r))
   const t: string[] = []
   const r1 = con(1), r4 = con(4), r2 = con(2), r3 = con(3), mej = c.puntos.filter((q) => q.mejora)
-  if (r1.length) t.push(`🔴 <b>1) Brote agudo:</b> ${r1.length === 1 ? 'el consecutivo' : 'los consecutivos'} ${lista(r1)} ${r1.length === 1 ? 'superó' : 'superaron'} el límite superior. Algo puntual pasó en ese grupo: revise origen de los lechones, ventilación, densidad, vacunación o enfermedades de ese momento.`)
-  if (r4.length) t.push(`🟠 <b>4) Alerta temprana:</b> ${lista(r4)} cayeron en la franja naranja, cerca del límite. Todavía no es un brote, pero la granja se está acercando: vale la pena revisar antes de que empeore.`)
-  if (r2.length) t.push(`🟣 <b>2) Foco endémico:</b> ${r2.length} consecutivos seguidos por encima de lo normal, del ${rango(r2)}. La neumonía subió de nivel y se está volviendo parte de lo normal en la granja; hay que revisar el manejo general y el plan sanitario, no un lote puntual.`)
-  if (r3.length) t.push(`🟡 <b>3) Tendencia (informativa):</b> del ${rango(r3)} cada consecutivo salió peor que el anterior.`)
+  if (r1.length) t.push(`🔴 <b>A) Brote agudo:</b> ${r1.length === 1 ? 'el consecutivo' : 'los consecutivos'} ${lista(r1)} ${r1.length === 1 ? 'superó' : 'superaron'} el límite superior. Algo puntual pasó en ese grupo: revise origen de los lechones, ventilación, densidad, vacunación o enfermedades de ese momento.`)
+  if (r4.length) t.push(`🟠 <b>B) Alerta temprana:</b> ${lista(r4)} cayeron en la franja naranja, cerca del límite. Todavía no es un brote, pero la granja se está acercando: vale la pena revisar antes de que empeore.`)
+  if (r2.length) t.push(`🟣 <b>C) Foco endémico:</b> ${r2.length} consecutivos seguidos por encima de lo normal, del ${rango(r2)}. La neumonía subió de nivel y se está volviendo parte de lo normal en la granja; hay que revisar el manejo general y el plan sanitario, no un lote puntual.`)
+  if (r3.length) t.push(`🟡 <b>D) Tendencia (informativa):</b> del ${rango(r3)} cada consecutivo salió peor que el anterior.`)
   if (mej.length) t.push(`✅ <b>Mejora sostenida:</b> ${mej.length} consecutivos seguidos por debajo de lo normal, del ${rango(mej)}. Lo que se cambió en ese tiempo está funcionando.`)
   if (!t.length) t.push('Ningún criterio de alerta: la granja se comporta de forma <b>estable</b>; las subidas y bajadas que se ven son su variación normal.')
   const pocos = c.puntos.filter((q) => q.pocos)
