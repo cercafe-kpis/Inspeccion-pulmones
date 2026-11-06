@@ -14,7 +14,7 @@ import { analisis, INDICADORES, META_CONSOL, nivelIdn, NIVEL_TXT, stats, type St
  */
 
 type Tab = 'res' | 'gra' | 'com'
-interface Filtros { asoc: string; periodo: string; desde: string; hasta: string; tab: Tab; granja: string; lote: string; ind: string; nivelTabla: 'granja' | 'lote'; orden: 'asc' | 'desc'; secciones: Seccion[]; definiciones: boolean }
+interface Filtros { asoc: string; periodo: string; desde: string; hasta: string; tab: Tab; granja: string; lote: string; ind: string; nivelTabla: 'granja' | 'lote'; orden: 'asc' | 'desc'; secciones: Seccion[]; definiciones: boolean; cierre: string | null }
 
 /**
  * Secciones del informe de "Granja y consecutivos". La persona elige cuáles ver y exportar; se muestran
@@ -73,16 +73,28 @@ function ordenarSecciones(l: Seccion[]): Seccion[] {
   return [...sinAyuda.slice(0, i + 1), 'spcAyuda', ...sinAyuda.slice(i + 1)]
 }
 
+/** Mensaje final del informe. Se puede editar en pantalla; null = este texto original. */
+const CIERRE_ORIGINAL = `Seguimos trabajando de la mano para fortalecer la sanidad y el desempeño productivo de la granja. El seguimiento periódico del score pulmonar nos permite identificar tendencias, evaluar la evolución sanitaria y orientar acciones oportunas.
+
+Los invitamos a consultar los resultados y el detalle de cada consecutivo en nuestro Hub de Servicios, donde podrán conocer con mayor profundidad la evolución de los indicadores y contar con información valiosa para el seguimiento sanitario de su granja.`
+let hubCierre = ''
+/** Texto del mensaje final como párrafos (línea en blanco = párrafo nuevo); "Hub de Servicios" queda como enlace al Tu.HUB. */
+function cierreHtml(texto: string) {
+  const hub = hubCierre ? `<a href="${esc(hubCierre)}" target="_blank" rel="noopener">Hub de Servicios</a>` : '<b>Hub de Servicios</b>'
+  return texto.trim().split(/\n\s*\n/).map((p) => `<p>${esc(p.trim()).replace(/\n/g, '<br>').replace(/Hub de Servicios/g, hub)}</p>`).join('')
+}
+
 /** Recuadro "Qué muestra" de una sección, solo si está marcado "Mostrar definiciones". */
 const definicion = (k: Seccion) => (f.definiciones && DEFINICIONES[k] ? `<div class="rs-def"><b>Qué muestra:</b> ${DEFINICIONES[k]}</div>` : '')
 
 const KEY_FILTROS = 'insp_pulmones_resultados_filtros'
-let f: Filtros = { asoc: '', periodo: '12', desde: '', hasta: '', tab: 'res', granja: '', lote: '', ind: 'idn', nivelTabla: 'granja', orden: 'asc', secciones: [...SECCIONES_DEFECTO], definiciones: false }
+let f: Filtros = { asoc: '', periodo: '12', desde: '', hasta: '', tab: 'res', granja: '', lote: '', ind: 'idn', nivelTabla: 'granja', orden: 'asc', secciones: [...SECCIONES_DEFECTO], definiciones: false, cierre: null }
 try { f = { ...f, ...JSON.parse(localStorage.getItem(KEY_FILTROS) || '{}') } } catch { /* sin filtros guardados */ }
 {
   const validas = new Set<string>(SECCIONES.map((x) => x.key))
   // 'idnLotes' (versión 2026-11-06-a) ahora es el indicador IDN.
   f.definiciones = f.definiciones === true
+  if (typeof f.cierre !== 'string') f.cierre = null
   f.secciones = Array.isArray(f.secciones) ? [...new Set(f.secciones.map((k) => (k === ('idnLotes' as Seccion) ? 'ind:idn' : k)).filter((k) => validas.has(k)))] : [...SECCIONES_DEFECTO]
 }
 const guardarFiltros = () => { try { localStorage.setItem(KEY_FILTROS, JSON.stringify(f)) } catch { /* nada */ } }
@@ -246,6 +258,14 @@ function enlazar() {
     if (c.checked) f.secciones.push(k)
     render()
   }))
+  on('rs-cierre-txt', 'input', (e) => {
+    const v = (e.target as HTMLTextAreaElement).value
+    f.cierre = v === CIERRE_ORIGINAL ? null : v
+    const vista = document.getElementById('rs-cierre-vista')
+    if (vista) vista.innerHTML = cierreHtml(v)
+    guardarFiltros()
+  })
+  on('rs-cierre-orig', 'click', () => { f.cierre = null; render() })
   on('rs-defs', 'change', (e) => { f.definiciones = (e.target as HTMLInputElement).checked; render() })
   on('rs-sec-defecto', 'click', () => { f.secciones = [...SECCIONES_DEFECTO]; render() })
   on('rs-sec-todas', 'click', () => { f.secciones = [...SECCIONES_TODAS]; render() })
@@ -428,8 +448,15 @@ function vistaGranja(vis: Fila[], r: { desde: string; hasta: string }, red: Stat
     tabla: () => `<div class="rs-panel"><h3>Consecutivos</h3><div class="rs-scroll"><table class="rs-table"><thead><tr><th>Consecutivo</th><th>Fecha</th><th class="n">Cerdos</th><th>IDN</th><th class="n">Consolidación</th><th class="n">Neumonía</th><th class="n">Pleuritis</th><th class="n">GDP (kg)</th></tr></thead><tbody>
     ${[...lotes].sort((a, b) => b.fecha.getTime() - a.fecha.getTime()).map((l) => `<tr tabindex="0" class="${l.consec === f.lote ? 'sel' : ''}" data-go="${esc(f.granja)}" data-lote="${l.consec === f.lote ? '' : esc(l.consec)}"><td>${esc(l.consec)}</td><td>${l.fecha.toISOString().slice(0, 10)}</td><td class="n">${l.s.n}</td><td>${pill(l.s.idn)}</td><td class="n"${l.s.consol >= META_CONSOL ? ' style="color:var(--rs-sev);font-weight:600" title="Por encima de la meta"' : ''}>${fmt(l.s.consol)} %</td><td class="n">${fmt(l.s.neum, 1)} %</td><td class="n">${fmt(l.s.pleur, 1)} %</td><td class="n">${fmt(l.s.gdp, 1)}</td></tr>`).join('')}
   </tbody></table></div><p class="rs-sub rs-solo-pantalla" style="margin-top:8px">Toque un consecutivo para ver solo ese consecutivo; tóquelo de nuevo para volver a todos.</p></div>`,
-    cierre: () => `<div class="rs-cierre"><p>Seguimos trabajando de la mano para fortalecer la sanidad y el desempeño productivo de la granja. El seguimiento periódico del score pulmonar nos permite identificar tendencias, evaluar la evolución sanitaria y orientar acciones oportunas.</p>
-    <p>Los invitamos a consultar los resultados y el detalle de cada consecutivo en nuestro ${hub ? `<a href="${esc(hub)}" target="_blank" rel="noopener">Hub de Servicios</a>` : '<b>Hub de Servicios</b>'}, donde podrán conocer con mayor profundidad la evolución de los indicadores y contar con información valiosa para el seguimiento sanitario de su granja.</p></div>`,
+    cierre: () => {
+      hubCierre = hub
+      const texto = f.cierre ?? CIERRE_ORIGINAL
+      return `<div class="rs-cierre">
+      <div class="rs-cierre-edit rs-solo-pantalla"><label for="rs-cierre-txt">Mensaje final <span class="rs-muted">(puede editarlo; deje una línea en blanco para separar párrafos)</span></label>
+        <textarea id="rs-cierre-txt" rows="6">${esc(texto)}</textarea>
+        <div class="rs-cierre-pie"><span class="rs-muted">Así saldrá en el PDF. Si escribe "Hub de Servicios", queda como enlace al Tu.HUB del asociado.</span><button type="button" class="rs-btn" id="rs-cierre-orig">Restaurar texto original</button></div></div>
+      <div class="rs-cierre-texto rs-solo-pdf" id="rs-cierre-vista">${cierreHtml(texto)}</div></div>`
+    },
   }
   if (!f.secciones.length) return '<div class="rs-panel rs-empty">No hay secciones elegidas. Márquelas en "Secciones del informe".</div>'
   return f.secciones.map((x) => (x.startsWith('ind:') ? indicador(x.slice(4)) : html[x as keyof typeof html]())).join('\n')
