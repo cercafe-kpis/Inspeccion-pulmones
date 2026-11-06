@@ -126,7 +126,7 @@ function fijarColoresSVG(raiz: HTMLElement) {
 function puntosDeCorte(bloque: HTMLElement): number[] {
   const top = bloque.getBoundingClientRect().top
   const ys = new Set<number>()
-  bloque.querySelectorAll('tr, .rs-alert, .rs-panel, .rs-kpi, .rs-legend').forEach((el) => ys.add(Math.round(el.getBoundingClientRect().bottom - top)))
+  bloque.querySelectorAll('tr, p, .rs-alert, .rs-panel, .rs-kpi, .rs-legend').forEach((el) => ys.add(Math.round(el.getBoundingClientRect().bottom - top)))
   return [...ys].sort((a, b) => a - b)
 }
 
@@ -202,7 +202,10 @@ export async function generarPDF(opts: { contenido: HTMLElement; titulo: string;
           // No cabe completo en lo que queda de la hoja: si cabe en una hoja nueva, o si en lo que queda no
           // entra ni una fila, se pasa a la siguiente.
           const primerCorte = cortes.find((c) => c > desde + 20) ?? hpx
-          if (hpx - desde <= (Y1 - Y0) / k || primerCorte - desde > dispPx) {
+          // Los bloques "partibles" (texto largo, como la explicación del gráfico de control) siguen en el
+          // espacio que queda y se parten entre párrafos, para que queden pegados a lo que explican.
+          const partible = b.classList.contains('rs-partible')
+          if ((!partible && hpx - desde <= (Y1 - Y0) / k) || primerCorte - desde > dispPx) {
             doc.addPage(); pag++; encabezado(); y = Y0; dispPx = (Y1 - Y0) / k
           }
         }

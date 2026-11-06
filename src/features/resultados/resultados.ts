@@ -65,6 +65,14 @@ const DEFINICIONES: Partial<Record<Seccion, string>> = {
   mapa: 'Esquema de los lóbulos del pulmón que muestra el porcentaje promedio de consolidación de cada uno, para identificar qué zonas están más afectadas.',
   categorias: 'Muestra qué porcentaje de los cerdos quedó en cada categoría Madec, de 0 (pulmón sano) a 6 (más de la mitad del pulmón dañado), según el porcentaje de pulmón con consolidación.',
 }
+/** "Cómo leer el gráfico de control" siempre va justo debajo del gráfico de control (si los dos están elegidos). */
+function ordenarSecciones(l: Seccion[]): Seccion[] {
+  const sinAyuda = l.filter((k) => k !== 'spcAyuda')
+  const i = sinAyuda.indexOf('spc')
+  if (!l.includes('spcAyuda') || i < 0) return l
+  return [...sinAyuda.slice(0, i + 1), 'spcAyuda', ...sinAyuda.slice(i + 1)]
+}
+
 /** Recuadro "Qué muestra" de una sección, solo si está marcado "Mostrar definiciones". */
 const definicion = (k: Seccion) => (f.definiciones && DEFINICIONES[k] ? `<div class="rs-def"><b>Qué muestra:</b> ${DEFINICIONES[k]}</div>` : '')
 
@@ -150,6 +158,7 @@ const nombreAsoc = (c: string) => datos?.cat.asociados.find((a) => a.Title === c
 
 function render() {
   if (!datos) return
+  f.secciones = ordenarSecciones(f.secciones)
   guardarFiltros()
   const vis = filasVisibles()
   const r = rango()
@@ -410,7 +419,7 @@ function vistaGranja(vis: Fila[], r: { desde: string; hasta: string }, red: Stat
     </div>
   </div>`,
     spc: () => panelControl(lotes, f.secciones.includes('spcAyuda')),
-    spcAyuda: () => `<div class="rs-panel"><h3>Cómo leer el gráfico de control</h3><div class="rs-ayuda">${ayudaControl()}</div></div>`,
+    spcAyuda: () => `<div class="rs-panel rs-partible"><h3>Cómo leer el gráfico de control</h3><div class="rs-ayuda">${ayudaControl()}</div></div>`,
     mapa: () => `<div class="rs-panel rs-angosto"><h3>Mapa pulmonar</h3>${definicion('mapa')}<p class="rs-sub">Consolidación promedio por lóbulo${f.lote ? ' del consecutivo' : ''}.</p>
       <div class="rs-lung"><div>${mp.svg}</div><div class="rs-lobes">${mp.lista}</div></div>
       <div class="rs-legend">${mp.leyenda}</div><div class="rs-callout"><b>Lectura:</b> ${mp.lectura}</div></div>`,
