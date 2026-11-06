@@ -130,7 +130,17 @@ function puntosDeCorte(bloque: HTMLElement): number[] {
   return [...ys].sort((a, b) => a - b)
 }
 
-export async function generarPDF(opts: { contenido: HTMLElement; titulo: string; subtitulo: string; archivo: string }) {
+/** Enlaces (por ejemplo "Hub de Servicios") de un bloque, en px desde su esquina; en el PDF quedan con clic. */
+function enlaces(bloque: HTMLElement) {
+  const r0 = bloque.getBoundingClientRect()
+  return [...bloque.querySelectorAll<HTMLAnchorElement>('a[href^="http"]')].map((a) => {
+    const r = a.getBoundingClientRect()
+    return { url: a.href, x: r.left - r0.left, y: r.top - r0.top, w: r.width, h: r.height }
+  })
+}
+
+export async function generarPDF(opts: { contenido: HTMLElement; titulo: string; subtitulo: string; archivo: string; orientacion?: 'horizontal' | 'vertical' }) {
+  const vertical = opts.orientacion === 'vertical'
   mostrarProgreso('Generando PDF…')
   const host = document.createElement('div')
   try {
@@ -139,8 +149,10 @@ export async function generarPDF(opts: { contenido: HTMLElement; titulo: string;
       cargarScript('https://unpkg.com/jspdf@2.5.1/dist/jspdf.umd.min.js', () => !!W.jspdf?.jsPDF),
     ])
     // Copia de la vista con ancho de computador (así el PDF sale igual desde el celular).
-    host.className = 'rs rs-pdf'
+    host.className = 'rs rs-pdf' + (vertical ? ' rs-pdf-v' : '')
     host.innerHTML = opts.contenido.innerHTML
+    // Explicaciones plegadas y textos de "toque aquí" no van en el papel.
+    host.querySelectorAll('details:not([open]), .rs-solo-pantalla').forEach((el) => el.remove())
     document.body.append(host)
     // Si alguna tabla no cabe a lo ancho, se agranda la copia (en el PDF todo se ajusta al ancho de la hoja).
     const disponible = host.clientWidth - 32
@@ -151,8 +163,8 @@ export async function generarPDF(opts: { contenido: HTMLElement; titulo: string;
     const anchoPx = host.clientWidth - 32 // .rs tiene 16 px de margen a cada lado
 
     const { jsPDF } = W.jspdf
-    const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4', compress: true })
-    const PW = 297, PH = 210, M = 10, Y0 = 27, Y1 = PH - 12
+    const doc = new jsPDF({ orientation: vertical ? 'portrait' : 'landscape', unit: 'mm', format: 'a4', compress: true })
+    const PW = vertical ? 210 : 297, PH = vertical ? 297 : 210, M = 10, Y0 = 27, Y1 = PH - 12
     const k = (PW - 2 * M) / anchoPx // mm por px
     const logo = logoCercafe()
 
@@ -180,6 +192,9 @@ export async function generarPDF(opts: { contenido: HTMLElement; titulo: string;
       const escala = Math.min(2, Math.sqrt(12e6 / (wpx * hpx)))
       const canvas: HTMLCanvasElement = await W.html2canvas(b, { scale: escala, backgroundColor: '#ffffff', windowWidth: 1280, logging: false })
       const cortes = puntosDeCorte(b)
+      const links = enlaces(b)
+      // Los bloques más angostos que la hoja (mapa pulmonar, categorías) quedan centrados, igual que en pantalla.
+      const x0 = M + Math.max(0, b.getBoundingClientRect().left - host.getBoundingClientRect().left - 16) * k
       let desde = 0
       while (desde < hpx - 1) {
         let dispPx = (Y1 - y) / k
@@ -201,7 +216,8 @@ export async function generarPDF(opts: { contenido: HTMLElement; titulo: string;
         trozo.height = Math.max(1, Math.round((hasta - desde) * (canvas.height / hpx)))
         trozo.getContext('2d')!.drawImage(canvas, 0, -Math.round(desde * (canvas.height / hpx)))
         const hmm = (hasta - desde) * k
-        doc.addImage(trozo.toDataURL('image/jpeg', 0.9), 'JPEG', M, y, wpx * k, hmm)
+        doc.addImage(trozo.toDataURL('image/jpeg', 0.9), 'JPEG', x0, y, wpx * k, hmm)
+        links.filter((l) => l.y >= desde && l.y + l.h <= hasta).forEach((l) => doc.link(x0 + l.x * k, y + (l.y - desde) * k, l.w * k, l.h * k, { url: l.url }))
         y += hmm + 4
         desde = hasta
         if (desde < hpx - 1) { doc.addPage(); pag++; encabezado(); y = Y0 }

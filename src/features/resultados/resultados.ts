@@ -2,7 +2,7 @@ import './resultados.css'
 import { estado } from '../../state'
 import { calcularAlcance, cargarDatos, codigosDeFiltro, type Alcance, type Catalogo, type Fila } from './datos'
 import {
-  calcularControl, columnasGranjas, MIN_CERDOS, esc, graficaControl, lecturaControl, REGLAS, explicacionCategorias, fmt, graficaCategorias, graficaLotes, mapaPulmonar, pill, spark,
+  calcularControl, columnasGranjas, graficaIndicadorLotes, MIN_CERDOS, esc, graficaControl, lecturaControl, REGLAS, explicacionCategorias, fmt, graficaCategorias, graficaLotes, mapaPulmonar, pill, spark,
   type FilaComp, type PuntoLote,
 } from './graficas'
 import { analisis, INDICADORES, META_CONSOL, nivelIdn, NIVEL_TXT, stats, type Stats } from './indicadores'
@@ -14,11 +14,41 @@ import { analisis, INDICADORES, META_CONSOL, nivelIdn, NIVEL_TXT, stats, type St
  */
 
 type Tab = 'res' | 'gra' | 'com'
-interface Filtros { asoc: string; periodo: string; desde: string; hasta: string; tab: Tab; granja: string; lote: string; ind: string; nivelTabla: 'granja' | 'lote'; orden: 'asc' | 'desc' }
+interface Filtros { asoc: string; periodo: string; desde: string; hasta: string; tab: Tab; granja: string; lote: string; ind: string; nivelTabla: 'granja' | 'lote'; orden: 'asc' | 'desc'; secciones: Seccion[] }
+
+/**
+ * Secciones del informe de "Granja y consecutivos". La persona elige cuáles ver y exportar; se muestran
+ * (y salen en el PDF) en el orden en que las fue marcando: cada una nueva se agrega abajo.
+ */
+const SECCIONES_FIJAS = [
+  { key: 'ficha', lbl: 'Datos de la granja' },
+  { key: 'analisis', lbl: 'Análisis y recomendación' },
+  { key: 'spc', lbl: 'Gráfico de control (SPC)' },
+  { key: 'spcAyuda', lbl: 'Cómo leer el gráfico de control' },
+  { key: 'mapa', lbl: 'Mapa pulmonar' },
+  { key: 'categorias', lbl: 'Cerdos por categoría Madec' },
+  { key: 'tabla', lbl: 'Tabla de consecutivos' },
+  { key: 'cierre', lbl: 'Mensaje final (Hub de Servicios)' },
+] as const
+/** Cada uno de los 15 indicadores (los mismos del Comparativo) agrega su gráfica "por consecutivo": clave "ind:<indicador>". */
+type Seccion = (typeof SECCIONES_FIJAS)[number]['key'] | `ind:${string}`
+const SECCIONES: { key: Seccion; lbl: string; grupo: string }[] = [
+  ...SECCIONES_FIJAS.map((x) => ({ ...x, grupo: 'Secciones' })),
+  ...INDICADORES.map((i) => ({ key: `ind:${i.key}` as Seccion, lbl: i.lbl, grupo: 'Indicadores por consecutivo' })),
+]
+const SECCIONES_DEFECTO: Seccion[] = ['ficha', 'analisis', 'ind:idn', 'spc', 'mapa', 'categorias', 'tabla', 'cierre']
+/** "Todas": las secciones fijas con los 15 indicadores después del análisis. */
+const SECCIONES_TODAS: Seccion[] = ['ficha', 'analisis', ...INDICADORES.map((i) => `ind:${i.key}` as Seccion), 'spc', 'spcAyuda', 'mapa', 'categorias', 'tabla', 'cierre']
+let seccionesAbierto = false
 
 const KEY_FILTROS = 'insp_pulmones_resultados_filtros'
-let f: Filtros = { asoc: '', periodo: '12', desde: '', hasta: '', tab: 'res', granja: '', lote: '', ind: 'idn', nivelTabla: 'granja', orden: 'asc' }
+let f: Filtros = { asoc: '', periodo: '12', desde: '', hasta: '', tab: 'res', granja: '', lote: '', ind: 'idn', nivelTabla: 'granja', orden: 'asc', secciones: [...SECCIONES_DEFECTO] }
 try { f = { ...f, ...JSON.parse(localStorage.getItem(KEY_FILTROS) || '{}') } } catch { /* sin filtros guardados */ }
+{
+  const validas = new Set<string>(SECCIONES.map((x) => x.key))
+  // 'idnLotes' (versión 2026-11-06-a) ahora es el indicador IDN.
+  f.secciones = Array.isArray(f.secciones) ? [...new Set(f.secciones.map((k) => (k === ('idnLotes' as Seccion) ? 'ind:idn' : k)).filter((k) => validas.has(k)))] : [...SECCIONES_DEFECTO]
+}
 const guardarFiltros = () => { try { localStorage.setItem(KEY_FILTROS, JSON.stringify(f)) } catch { /* nada */ } }
 
 let datos: { filas: Fila[]; cat: Catalogo } | null = null
@@ -123,7 +153,8 @@ function render() {
       <label>Periodo<select id="rs-per">${[['3', 'Últimos 3 meses'], ['6', 'Últimos 6 meses'], ['12', 'Últimos 12 meses'], ['todo', 'Todo el historial'], ['rango', 'Rango de fechas']].map(([v, t]) => `<option value="${v}" ${v === f.periodo ? 'selected' : ''}>${t}</option>`).join('')}</select></label>
       ${f.periodo === 'rango' ? `<label>Desde<input type="date" id="rs-desde" value="${esc(f.desde)}"></label><label>Hasta<input type="date" id="rs-hasta" value="${esc(f.hasta)}"></label>` : ''}
       ${f.tab === 'gra' ? `<label>Granja<select id="rs-granja">${granjas.map((g) => `<option value="${esc(g)}" ${g === f.granja ? 'selected' : ''}>${esc(vista(g))}</option>`).join('')}</select></label>
-        <label>Consecutivo<select id="rs-lote"><option value="">Todos los consecutivos</option>${lotesGranja.map((c) => `<option ${c === f.lote ? 'selected' : ''}>${esc(c)}</option>`).join('')}</select></label>` : ''}
+        <label>Consecutivo<select id="rs-lote"><option value="">Todos los consecutivos</option>${lotesGranja.map((c) => `<option ${c === f.lote ? 'selected' : ''}>${esc(c)}</option>`).join('')}</select></label>
+        ${filtroSecciones()}` : ''}
       ${f.tab === 'com' ? `<label>Indicador<select id="rs-ind">${INDICADORES.map((i) => `<option value="${i.key}" ${i.key === f.ind ? 'selected' : ''}>${i.lbl}</option>`).join('')}</select></label>` : ''}
     </div>
     <div class="rs-tabs" role="tablist">
@@ -138,6 +169,21 @@ function render() {
   else if (f.tab === 'gra') cont.innerHTML = vistaGranja(vis, r, red)
   else cont.innerHTML = vistaComparativo(cur, red)
   enlazar()
+}
+
+/** Lista desplegable con casillas: qué secciones mostrar y exportar, y en qué orden (el número). */
+function filtroSecciones() {
+  const n = f.secciones.length
+  const filas = SECCIONES.map((x, j) => {
+    const i = f.secciones.indexOf(x.key)
+    return `${j === 0 || SECCIONES[j - 1].grupo !== x.grupo ? `<div class="rs-multi-grupo">${x.grupo}</div>` : ''}<label><input type="checkbox" data-sec="${x.key}" ${i >= 0 ? 'checked' : ''}><span class="nm">${x.lbl}</span><span class="rs-orden">${i >= 0 ? i + 1 : ''}</span></label>`
+  }).join('')
+  return `<div class="rs-fx rs-fx-sec"><span>Secciones e indicadores</span>
+    <details class="rs-multi" id="rs-secciones"${seccionesAbierto ? ' open' : ''}><summary>${n === SECCIONES.length ? 'Todo' : n ? `${n} elegido${n === 1 ? '' : 's'}` : 'Nada elegido'}</summary>
+      <div class="rs-multi-pop"><div class="rs-multi-ayuda">Se muestran y salen en el PDF en el orden en que los marque (el número). Cada uno nuevo se agrega abajo.</div>
+        ${filas}
+        <div class="rs-multi-btns"><button type="button" class="rs-btn" id="rs-sec-defecto">Informe recomendado</button><button type="button" class="rs-btn" id="rs-sec-todas">Todo</button><button type="button" class="rs-btn" id="rs-sec-ninguna">Quitar todo</button></div></div>
+    </details></div>`
 }
 
 function textoFiltros(r: { desde: string; hasta: string }) {
@@ -156,6 +202,16 @@ function enlazar() {
   on('rs-granja', 'change', (e) => { f.granja = val(e); f.lote = ''; render() })
   on('rs-lote', 'change', (e) => { f.lote = val(e); render() })
   on('rs-ind', 'change', (e) => { f.ind = val(e); render() })
+  on('rs-secciones', 'toggle', (e) => { seccionesAbierto = (e.target as HTMLDetailsElement).open })
+  document.querySelectorAll<HTMLInputElement>('[data-sec]').forEach((c) => c.addEventListener('change', () => {
+    const k = c.dataset.sec as Seccion
+    f.secciones = f.secciones.filter((x) => x !== k)
+    if (c.checked) f.secciones.push(k)
+    render()
+  }))
+  on('rs-sec-defecto', 'click', () => { f.secciones = [...SECCIONES_DEFECTO]; render() })
+  on('rs-sec-todas', 'click', () => { f.secciones = [...SECCIONES_TODAS]; render() })
+  on('rs-sec-ninguna', 'click', () => { f.secciones = []; render() })
   on('rs-act', 'click', () => abrirResultados(true))
   on('rs-xls', 'click', exportarExcel)
   on('rs-pdf', 'click', exportarPDF)
@@ -239,18 +295,10 @@ function vistaResumen(vis: Fila[], cur: Fila[], red: Stats) {
 
 /* ══ Vista: Granja y consecutivos ══ */
 
-function panelControl(lotes: PuntoLote[]) {
+/** Gráfico de control. Con `ayudaAparte` la explicación no va adentro (se muestra como sección propia). */
+function panelControl(lotes: PuntoLote[], ayudaAparte: boolean) {
   const c = calcularControl(lotes)
-  const criterios = ([1, 4, 2, 3] as const).map((r) => `<tr><td><b style="color:${REGLAS[r].color}">${REGLAS[r].letra}) ${REGLAS[r].nombre}</b></td><td>${REGLAS[r].criterio}</td></tr>`).join('')
-  const ayuda = `<details class="rs-ayuda"><summary>¿Cómo leer y cómo se calcula?</summary>
-    <p><b>Para qué sirve:</b> separa la variación normal de la granja (las subidas y bajadas de siempre) de los cambios que de verdad indican un problema.</p>
-    <p><b>Líneas:</b> la verde gruesa es el IDN normal (promedio) de la granja. Las otras marcan qué tan lejos está cada consecutivo de lo normal: azul = un poco (1σ), naranja = bastante (2σ), roja = límite (3σ). En estadística a estas distancias se les llama σ (sigma) y a las franjas Zona C (verde), B (amarilla) y A (naranja).</p>
-    <p><b>Puntos:</b> el color indica la zona en la que cayó el consecutivo; el aro y la letra encima indican qué alerta disparó (si hay dos, salen las dos, por ejemplo A·B).</p>
-    <table class="rs-table rs-cats"><thead><tr><th>Alerta</th><th>Criterio</th></tr></thead><tbody>${criterios}
-      <tr><td><b style="color:var(--rs-leve)">Mejora sostenida</b></td><td>9 consecutivos seguidos por debajo de lo normal (buena noticia).</td></tr></tbody></table>
-    <p><b>Cálculo:</b> σ es la variación típica entre consecutivos de esta granja, medida con la diferencia entre un consecutivo y el siguiente y calculada para el número de cerdos que normalmente se inspeccionan en la granja. Los consecutivos con menos de ${MIN_CERDOS} cerdos se muestran como círculo vacío pero no entran al cálculo ni a las alertas, porque con tan pocos animales el IDN depende demasiado del azar. Los consecutivos que pasan el límite tampoco entran al cálculo de lo normal, para que un caso raro no lo mueva.</p>
-    <p><b>Por qué 3σ, 9 y 6:</b> si la granja está estable, cada criterio pasa por azar solo unas 3 veces de cada 1.000 (Shewhart, Western Electric, Nelson). Por eso, cuando aparece, casi seguro algo cambió. Las alertas C y D necesitan varios consecutivos: se ven mejor con "Últimos 12 meses" o "Todo el historial".</p>
-    <p>Los límites salen de la historia de la propia granja, no de la red Cercafe: <b>estable no quiere decir bueno</b>. Para comparar con la red use la gráfica de arriba.</p></details>`
+  const ayuda = `<details class="rs-ayuda"><summary>¿Cómo leer y cómo se calcula?</summary>${ayudaControl()}</details>`
   if (!c) return `<div class="rs-panel"><h3>Gráfico de control (SPC)</h3><p class="rs-sub">Se necesitan al menos 5 consecutivos con ${MIN_CERDOS} o más cerdos en el periodo para calcular los límites. Pruebe con un periodo más largo.</p></div>`
   return `<div class="rs-panel"><h3>Gráfico de control (SPC)</h3><p class="rs-sub">IDN de cada consecutivo, en orden, frente a las zonas de variación normal de la granja. Toque un punto para ver el detalle.</p>
     ${graficaControl(c, f.lote)}
@@ -265,7 +313,21 @@ function panelControl(lotes: PuntoLote[]) {
         ${([1, 4, 2, 3] as const).map((r) => `<span><i style="background:none;border:2px solid ${REGLAS[r].color};border-radius:50%"></i><b style="color:${REGLAS[r].color}">${REGLAS[r].letra}) ${REGLAS[r].nombre}:</b> ${REGLAS[r].criterio}</span>`).join('')}
         <span class="rs-muted">Si no hay aros, no hay alertas.</span></div>
     </div>
-    <div class="rs-callout"><b>Lectura:</b><br>${lecturaControl(c)}</div>${ayuda}</div>`
+    <div class="rs-callout"><b>Lectura:</b><br>${lecturaControl(c)}</div>${ayudaAparte ? '' : ayuda}</div>`
+}
+
+/** Explicación del gráfico de control (desplegable dentro del gráfico, o sección propia del informe). */
+function ayudaControl() {
+  const criterios = ([1, 4, 2, 3] as const).map((r) => `<tr><td><b style="color:${REGLAS[r].color}">${REGLAS[r].letra}) ${REGLAS[r].nombre}</b></td><td>${REGLAS[r].criterio}</td></tr>`).join('')
+  return `
+    <p><b>Para qué sirve:</b> separa la variación normal de la granja (las subidas y bajadas de siempre) de los cambios que de verdad indican un problema.</p>
+    <p><b>Líneas:</b> la verde gruesa es el IDN normal (promedio) de la granja. Las otras marcan qué tan lejos está cada consecutivo de lo normal: azul = un poco (1σ), naranja = bastante (2σ), roja = límite (3σ). En estadística a estas distancias se les llama σ (sigma) y a las franjas Zona C (verde), B (amarilla) y A (naranja).</p>
+    <p><b>Puntos:</b> el color indica la zona en la que cayó el consecutivo; el aro y la letra encima indican qué alerta disparó (si hay dos, salen las dos, por ejemplo A·B).</p>
+    <table class="rs-table rs-cats"><thead><tr><th>Alerta</th><th>Criterio</th></tr></thead><tbody>${criterios}
+      <tr><td><b style="color:var(--rs-leve)">Mejora sostenida</b></td><td>9 consecutivos seguidos por debajo de lo normal (buena noticia).</td></tr></tbody></table>
+    <p><b>Cálculo:</b> σ es la variación típica entre consecutivos de esta granja, medida con la diferencia entre un consecutivo y el siguiente y calculada para el número de cerdos que normalmente se inspeccionan en la granja. Los consecutivos con menos de ${MIN_CERDOS} cerdos se muestran como círculo vacío pero no entran al cálculo ni a las alertas, porque con tan pocos animales el IDN depende demasiado del azar. Los consecutivos que pasan el límite tampoco entran al cálculo de lo normal, para que un caso raro no lo mueva.</p>
+    <p><b>Por qué 3σ, 9 y 6:</b> si la granja está estable, cada criterio pasa por azar solo unas 3 veces de cada 1.000 (Shewhart, Western Electric, Nelson). Por eso, cuando aparece, casi seguro algo cambió. Las alertas C y D necesitan varios consecutivos: se ven mejor con "Últimos 12 meses" o "Todo el historial".</p>
+    <p>Los límites salen de la historia de la propia granja, no de la red Cercafe: <b>estable no quiere decir bueno</b>. Para comparar con la red use la gráfica de IDN por consecutivo.</p>`
 }
 
 function vistaGranja(vis: Fila[], r: { desde: string; hasta: string }, red: Stats) {
@@ -287,12 +349,24 @@ function vistaGranja(vis: Fila[], r: { desde: string; hasta: string }, red: Stat
   const asoc = deGranja[0]?.asociado || datos?.cat.asociadoDe[f.granja.toUpperCase()] || ''
   if (!s.n) return `<div class="rs-panel"><div class="rs-farm"><div><div class="rs-muted">${esc(nombreAsoc(asoc))}</div><h2>${esc(vista(f.granja))}</h2></div></div><div class="rs-empty">Sin inspecciones de esta granja en el periodo.</div></div>`
   const k = nivelIdn(s.idn)
-  return `
-  <div class="rs-panel"><div class="rs-farm">
+  const hub = datos?.cat.asociados.find((a) => a.Title === asoc)?.SitioTuHub || alcance.tuHub || ''
+  const indicador = (key: string) => {
+    const ind = INDICADORES.find((i) => i.key === key)
+    if (!ind) return ''
+    if (ind.key === 'idn') return `<div class="rs-panel"><h3>IDN por consecutivo</h3><p class="rs-sub">Cada punto es un consecutivo. Líneas guía: 0,56 moderado y 0,90 severo; la punteada verde es la red Cercafe.</p>${graficaLotes(lotes, desde, aFecha(r.hasta), red.idn)}</div>`
+    const esGdp = ind.key === 'gdp'
+    const refRed = esGdp ? null : (red[ind.key] as number)
+    const meta = ind.key === 'consol' ? META_CONSOL : null
+    const nota = esGdp ? `Kilos estimados de pérdida en cada consecutivo. Total del periodo: ${ind.fmt(s.gdp)} kg.`
+      : `Cada punto es un consecutivo. ${f.lote ? 'Consecutivo elegido' : 'Granja en el periodo'}: <b>${ind.fmt(s[ind.key] as number)}</b>${refRed != null ? ` · Red Cercafe: ${ind.fmt(refRed)} (línea punteada verde)` : ''}${meta != null ? ` · Meta: menor a ${META_CONSOL} % (línea roja)` : ''}.`
+    return `<div class="rs-panel"><h3>${esc(ind.lbl.replace(/^% /, ''))} por consecutivo</h3><p class="rs-sub">${nota}</p>${graficaIndicadorLotes(lotes, desde, aFecha(r.hasta), ind.key, ind.fmt, refRed, meta)}</div>`
+  }
+  const html: Record<(typeof SECCIONES_FIJAS)[number]['key'], () => string> = {
+    ficha: () => `<div class="rs-panel"><div class="rs-farm">
     <div><div class="rs-muted">${esc(nombreAsoc(asoc))}${f.lote ? ' · Consecutivo ' + esc(f.lote) : ''}</div><h2>${esc(vista(f.granja))}</h2></div>
     <div class="rs-farm-stats"><div>IDN<b>${fmt(s.idn)}</b></div><div>Estado<span>${pill(s.idn)}</span></div><div>Consecutivos<b>${s.lotes}</b></div><div>Cerdos<b>${s.n}</b></div><div>Neumonía<b>${fmt(s.neum, 1)} %</b></div><div>Pleuritis<b>${fmt(s.pleur, 1)} %</b></div><div>Red Cercafe<b>${fmt(red.idn)}</b></div></div>
-  </div></div>
-  <div class="rs-panel"><h3>Análisis de resultados</h3>
+  </div></div>`,
+    analisis: () => `<div class="rs-panel"><h3>Análisis de resultados</h3>
     <div class="rs-grid2 rs-analisis">
       <table class="rs-table rs-kv"><tbody>
         <tr><td>IDN</td><td>${fmt(s.idn)} — <b class="rs-t-${k}">${NIVEL_TXT[k]}</b></td></tr>
@@ -305,19 +379,22 @@ function vistaGranja(vis: Fila[], r: { desde: string; hasta: string }, red: Stat
       <div class="rs-reco rs-b-${k}"><div class="rs-eyebrow">Recomendación</div><p>${an.recomendacion}</p>
         <div class="rs-muted">Escala IDN: Sin lesión = 0 · Leve &lt; 0,56 · Moderado 0,56–0,89 · Severo &gt; 0,89</div></div>
     </div>
-  </div>
-  <div class="rs-panel"><h3>IDN por consecutivo</h3><p class="rs-sub">Cada punto es un consecutivo. Líneas guía: 0,56 moderado y 0,90 severo; la punteada verde es la red Cercafe.</p>${graficaLotes(lotes, desde, aFecha(r.hasta), red.idn)}</div>
-  ${panelControl(lotes)}
-  <div class="rs-grid2e">
-    <div class="rs-panel"><h3>Mapa pulmonar</h3><p class="rs-sub">Consolidación promedio por lóbulo${f.lote ? ' del consecutivo' : ''}.</p>
+  </div>`,
+    spc: () => panelControl(lotes, f.secciones.includes('spcAyuda')),
+    spcAyuda: () => `<div class="rs-panel"><h3>Cómo leer el gráfico de control</h3><div class="rs-ayuda">${ayudaControl()}</div></div>`,
+    mapa: () => `<div class="rs-panel rs-angosto"><h3>Mapa pulmonar</h3><p class="rs-sub">Consolidación promedio por lóbulo${f.lote ? ' del consecutivo' : ''}.</p>
       <div class="rs-lung"><div>${mp.svg}</div><div class="rs-lobes">${mp.lista}</div></div>
-      <div class="rs-legend">${mp.leyenda}</div><div class="rs-callout"><b>Lectura:</b> ${mp.lectura}</div></div>
-    <div class="rs-panel"><h3>Cerdos por categoría Madec</h3><p class="rs-sub">Qué porcentaje de los cerdos quedó en cada categoría, según cuánto pulmón tiene dañado (consolidación).</p>${graficaCategorias(s)}
-      ${explicacionCategorias()}</div>
-  </div>
-  <div class="rs-panel"><h3>Consecutivos</h3><div class="rs-scroll"><table class="rs-table"><thead><tr><th>Consecutivo</th><th>Fecha</th><th class="n">Cerdos</th><th>IDN</th><th class="n">Consolidación</th><th class="n">Neumonía</th><th class="n">Pleuritis</th><th class="n">GDP (kg)</th></tr></thead><tbody>
+      <div class="rs-legend">${mp.leyenda}</div><div class="rs-callout"><b>Lectura:</b> ${mp.lectura}</div></div>`,
+    categorias: () => `<div class="rs-panel rs-angosto"><h3>Cerdos por categoría Madec</h3><p class="rs-sub">Qué porcentaje de los cerdos quedó en cada categoría, según cuánto pulmón tiene dañado (consolidación).</p>${graficaCategorias(s)}
+      ${explicacionCategorias()}</div>`,
+    tabla: () => `<div class="rs-panel"><h3>Consecutivos</h3><div class="rs-scroll"><table class="rs-table"><thead><tr><th>Consecutivo</th><th>Fecha</th><th class="n">Cerdos</th><th>IDN</th><th class="n">Consolidación</th><th class="n">Neumonía</th><th class="n">Pleuritis</th><th class="n">GDP (kg)</th></tr></thead><tbody>
     ${[...lotes].sort((a, b) => b.fecha.getTime() - a.fecha.getTime()).map((l) => `<tr tabindex="0" class="${l.consec === f.lote ? 'sel' : ''}" data-go="${esc(f.granja)}" data-lote="${l.consec === f.lote ? '' : esc(l.consec)}"><td>${esc(l.consec)}</td><td>${l.fecha.toISOString().slice(0, 10)}</td><td class="n">${l.s.n}</td><td>${pill(l.s.idn)}</td><td class="n"${l.s.consol >= META_CONSOL ? ' style="color:var(--rs-sev);font-weight:600" title="Por encima de la meta"' : ''}>${fmt(l.s.consol)} %</td><td class="n">${fmt(l.s.neum, 1)} %</td><td class="n">${fmt(l.s.pleur, 1)} %</td><td class="n">${fmt(l.s.gdp, 1)}</td></tr>`).join('')}
-  </tbody></table></div><p class="rs-sub" style="margin-top:8px">Toque un consecutivo para ver solo ese consecutivo; tóquelo de nuevo para volver a todos.</p></div>`
+  </tbody></table></div><p class="rs-sub rs-solo-pantalla" style="margin-top:8px">Toque un consecutivo para ver solo ese consecutivo; tóquelo de nuevo para volver a todos.</p></div>`,
+    cierre: () => `<div class="rs-cierre"><p>Seguimos trabajando de la mano para fortalecer la sanidad y el desempeño productivo de la granja. El seguimiento periódico del score pulmonar nos permite identificar tendencias, evaluar la evolución sanitaria y orientar acciones oportunas.</p>
+    <p>Los invitamos a consultar los resultados y el detalle de cada consecutivo en nuestro ${hub ? `<a href="${esc(hub)}" target="_blank" rel="noopener">Hub de Servicios</a>` : '<b>Hub de Servicios</b>'}, donde podrán conocer con mayor profundidad la evolución de los indicadores y contar con información valiosa para el seguimiento sanitario de su granja.</p></div>`,
+  }
+  if (!f.secciones.length) return '<div class="rs-panel rs-empty">No hay secciones elegidas. Márquelas en "Secciones del informe".</div>'
+  return f.secciones.map((x) => (x.startsWith('ind:') ? indicador(x.slice(4)) : html[x as keyof typeof html]())).join('\n')
 }
 
 
@@ -409,6 +486,8 @@ async function exportarPDF() {
     titulo: nombre,
     subtitulo: [nombreVista(), asoc ? nombreAsoc(asoc) : '', textoFiltros(rango()).replace(/ · Granja:.*$/, '')].filter(Boolean).join(' · '),
     archivo: `Score Pulmonar - ${paraArchivo(nombre)} - ${hoyISO()}.pdf`,
+    // El informe de una granja sale en hoja vertical, una sección debajo de otra.
+    orientacion: f.tab === 'gra' ? 'vertical' : 'horizontal',
   })
 }
 
@@ -420,6 +499,11 @@ function iniciarTooltip() {
   tipListo = true
   const tip = document.createElement('div')
   tip.id = 'rs-tip'
+  // La lista de "Secciones del informe" se cierra al tocar fuera de ella.
+  document.addEventListener('click', (e) => {
+    const d = document.getElementById('rs-secciones') as HTMLDetailsElement | null
+    if (d?.open && !d.contains(e.target as Node)) { d.open = false; seccionesAbierto = false }
+  })
   tip.hidden = true
   document.body.append(tip)
   document.addEventListener('mousemove', (e) => {

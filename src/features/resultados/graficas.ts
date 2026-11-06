@@ -63,6 +63,45 @@ export function graficaLotes(lotes: PuntoLote[], desde: Date, hasta: Date, red: 
   return o + '</svg>'
 }
 
+/**
+ * Cualquier indicador (%, kg) por consecutivo en el tiempo, para el informe de una granja.
+ * Línea punteada verde = red Cercafe; línea roja = meta (solo consolidación). Los puntos por encima de la meta van en rojo.
+ */
+export function graficaIndicadorLotes(lotes: PuntoLote[], desde: Date, hasta: Date, key: keyof Stats, formato: (v: number) => string, red: number | null, meta: number | null) {
+  if (!lotes.length) return '<div class="rs-empty">Sin consecutivos en el periodo.</div>'
+  const W = 900, H = 240, L = 48, R = 16, T = 18, B = 30
+  const a = desde.getTime(), b = Math.max(hasta.getTime(), a + 864e5)
+  const val = (l: PuntoLote) => l.s[key] as number
+  const top = Math.max(...lotes.map(val), red || 0, meta || 0) || 1
+  const mag = Math.pow(10, Math.floor(Math.log10(top / 4)))
+  const paso = [1, 2, 2.5, 5, 10].map((m) => m * mag).find((p) => top / p <= 5) || 10 * mag
+  const ymax = Math.ceil((top * 1.1) / paso) * paso
+  const x = (d: Date) => L + ((d.getTime() - a) / (b - a)) * (W - L - R)
+  const y = (v: number) => T + (1 - v / ymax) * (H - T - B)
+  const dec = paso < 1 ? 1 : 0
+  let o = `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="Indicador por consecutivo">`
+  for (let v = 0; v <= ymax + 1e-9; v += paso) o += `<line x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}" stroke="var(--rs-grid)"/><text x="${L - 8}" y="${y(v) + 4}" text-anchor="end" font-size="11" fill="var(--hint)">${fmt(v, dec)}</text>`
+  if (meta != null) o += `<line x1="${L}" x2="${W - R}" y1="${y(meta)}" y2="${y(meta)}" stroke="var(--rs-sev)" stroke-width="1.5"/><text x="${W - R}" y="${y(meta) - 5}" text-anchor="end" font-size="10.5" fill="var(--rs-sev)">Meta ${formato(meta)}</text>`
+  if (red != null) o += `<line x1="${L}" x2="${W - R}" y1="${y(red)}" y2="${y(red)}" stroke="var(--g)" stroke-width="1.5" stroke-dasharray="2 4"/><text x="${L + 6}" y="${y(red) - 5}" font-size="10.5" fill="var(--muted)">Red Cercafe ${formato(red)}</text>`
+  const meses = Math.max(1, Math.round((b - a) / (30.4 * 864e5)))
+  const pm = meses > 14 ? 3 : meses > 7 ? 2 : 1
+  for (let d = new Date(desde.getFullYear(), desde.getMonth() + 1, 1); d.getTime() <= b; d = new Date(d.getFullYear(), d.getMonth() + pm, 1)) {
+    o += `<text x="${x(d)}" y="${H - 10}" text-anchor="middle" font-size="11" fill="var(--hint)">${d.toLocaleDateString('es-CO', { month: 'short' })}${d.getMonth() === 0 ? ' ' + String(d.getFullYear()).slice(2) : ''}</text>`
+  }
+  o += `<line x1="${L}" x2="${W - R}" y1="${y(0)}" y2="${y(0)}" stroke="var(--border)"/>`
+  const ord = [...lotes].sort((p, q) => p.fecha.getTime() - q.fecha.getTime())
+  o += `<polyline fill="none" stroke="var(--muted)" stroke-width="2" stroke-linejoin="round" points="${ord.map((l) => x(l.fecha) + ',' + y(val(l))).join(' ')}"/>`
+  const etiquetas = ord.length <= 16
+  ord.forEach((l) => {
+    const v = val(l)
+    const color = meta != null && v >= meta ? 'var(--rs-sev)' : 'var(--g)'
+    const tip = `<b>Consecutivo ${esc(l.consec)}</b><br>${l.fecha.toLocaleDateString('es-CO')} · ${l.s.n} cerdos<br>${formato(v)}`
+    if (etiquetas) o += `<text x="${x(l.fecha)}" y="${y(v) - 11}" text-anchor="middle" font-size="10" font-weight="600" fill="var(--muted)" paint-order="stroke" stroke="#fff" stroke-width="3">${formato(v)}</text>`
+    o += `<circle cx="${x(l.fecha)}" cy="${y(v)}" r="5.5" fill="${color}" stroke="#fff" stroke-width="2"/><circle cx="${x(l.fecha)}" cy="${y(v)}" r="14" fill="transparent" data-tip="${esc(tip)}"/>`
+  })
+  return o + '</svg>'
+}
+
 /* ── Gráfico de control (SPC) del IDN por consecutivo ── */
 
 /** Reglas de alerta (numeración del cuadro de criterios). */
