@@ -14,7 +14,7 @@ import { analisis, INDICADORES, META_CONSOL, nivelIdn, NIVEL_TXT, stats, type St
  */
 
 type Tab = 'res' | 'gra' | 'com'
-interface Filtros { asoc: string; periodo: string; desde: string; hasta: string; tab: Tab; granja: string; lote: string; ind: string; nivelTabla: 'granja' | 'lote'; orden: 'asc' | 'desc'; secciones: Seccion[] }
+interface Filtros { asoc: string; periodo: string; desde: string; hasta: string; tab: Tab; granja: string; lote: string; ind: string; nivelTabla: 'granja' | 'lote'; orden: 'asc' | 'desc'; secciones: Seccion[]; definiciones: boolean }
 
 /**
  * Secciones del informe de "Granja y consecutivos". La persona elige cuáles ver y exportar; se muestran
@@ -41,12 +41,40 @@ const SECCIONES_DEFECTO: Seccion[] = ['ficha', 'analisis', 'ind:idn', 'spc', 'ma
 const SECCIONES_TODAS: Seccion[] = ['ficha', 'analisis', ...INDICADORES.map((i) => `ind:${i.key}` as Seccion), 'spc', 'spcAyuda', 'mapa', 'categorias', 'tabla', 'cierre']
 let seccionesAbierto = false
 
+/**
+ * Qué muestra cada gráfica (textos de Nathalia, nov 2026). Con "Mostrar definiciones" marcado salen debajo del
+ * título de cada sección elegida, en pantalla y en el PDF.
+ */
+const DEFINICIONES: Partial<Record<Seccion, string>> = {
+  'ind:idn': 'Muestra el índice de neumonía (IDN) de cada consecutivo, un número que resume el daño pulmonar (0 es sin lesión y, a mayor valor, mayor daño), a lo largo del tiempo, con las líneas guía de 0,56 (moderado) y 0,90 (severo) y el promedio de la red Cercafe como referencia.',
+  'ind:consol': 'Muestra el porcentaje promedio de pulmón endurecido por neumonía en cada consecutivo, comparado con el promedio de la red Cercafe y con la meta de menos de 5 %.',
+  'ind:neum': 'Muestra el porcentaje de cerdos con lesiones de neumonía en cada consecutivo, con el promedio de la red Cercafe como referencia.',
+  'ind:pleur': 'Muestra el porcentaje de cerdos con pleuritis, que es la inflamación de la membrana que recubre el pulmón, en cada consecutivo y frente al promedio de la red Cercafe.',
+  'ind:poliser': 'Muestra el porcentaje de cerdos con inflamación simultánea de varias membranas serosas (pleura, pericardio y peritoneo) en cada consecutivo, frente al promedio de la red Cercafe.',
+  'ind:gdp': 'Muestra los kilos de ganancia de peso que se estima que los cerdos dejaron de ganar por el daño pulmonar en cada consecutivo. La suma de todos los consecutivos es el total del periodo.',
+  'ind:nint': 'Muestra el porcentaje de cerdos con inflamación difusa del tejido pulmonar, que suele relacionarse con infecciones virales, en cada consecutivo y frente a la red Cercafe.',
+  'ind:absc': 'Muestra el porcentaje de cerdos con abscesos en el pulmón, cavidades con pus rodeadas por una cápsula, en cada consecutivo y frente a la red Cercafe.',
+  'ind:nodu': 'Muestra el porcentaje de cerdos con nódulos en el pulmón, masas pequeñas y localizadas, en cada consecutivo y frente a la red Cercafe.',
+  'ind:peri': 'Muestra el porcentaje de cerdos con inflamación del pericardio, la membrana que envuelve el corazón, en cada consecutivo y frente a la red Cercafe.',
+  'ind:manc': 'Muestra el porcentaje de cerdos con manchas blanquecinas en el hígado, cicatrices que dejan las larvas de parásitos, en cada consecutivo y frente a la red Cercafe.',
+  'ind:agua': 'Muestra el porcentaje de cerdos con agua aspirada en el pulmón durante el beneficio en cada consecutivo. Es un hallazgo del proceso y no una enfermedad.',
+  'ind:sang': 'Muestra el porcentaje de cerdos con sangre aspirada en el pulmón durante el desangrado en cada consecutivo. Es un hallazgo del proceso y no una enfermedad.',
+  'ind:pete': 'Muestra el porcentaje de cerdos con petequias, pequeños puntos rojos causados por hemorragias diminutas, en cada consecutivo y frente a la red Cercafe.',
+  'ind:ambos': 'Muestra el porcentaje de cerdos que presentan al mismo tiempo artefacto de agua y de sangre en cada consecutivo, frente al promedio de la red Cercafe.',
+  spc: 'Muestra el índice de neumonía (IDN) de cada consecutivo, en orden, frente a las zonas de variación normal de la propia granja (normal, atención, alerta y límite), para distinguir los cambios reales de las variaciones habituales y detectar alertas como brote agudo, alerta temprana, foco endémico o tendencia.',
+  mapa: 'Esquema de los lóbulos del pulmón que muestra el porcentaje promedio de consolidación de cada uno, para identificar qué zonas están más afectadas.',
+  categorias: 'Muestra qué porcentaje de los cerdos quedó en cada categoría Madec, de 0 (pulmón sano) a 6 (más de la mitad del pulmón dañado), según el porcentaje de pulmón con consolidación.',
+}
+/** Recuadro "Qué muestra" de una sección, solo si está marcado "Mostrar definiciones". */
+const definicion = (k: Seccion) => (f.definiciones && DEFINICIONES[k] ? `<div class="rs-def"><b>Qué muestra:</b> ${DEFINICIONES[k]}</div>` : '')
+
 const KEY_FILTROS = 'insp_pulmones_resultados_filtros'
-let f: Filtros = { asoc: '', periodo: '12', desde: '', hasta: '', tab: 'res', granja: '', lote: '', ind: 'idn', nivelTabla: 'granja', orden: 'asc', secciones: [...SECCIONES_DEFECTO] }
+let f: Filtros = { asoc: '', periodo: '12', desde: '', hasta: '', tab: 'res', granja: '', lote: '', ind: 'idn', nivelTabla: 'granja', orden: 'asc', secciones: [...SECCIONES_DEFECTO], definiciones: false }
 try { f = { ...f, ...JSON.parse(localStorage.getItem(KEY_FILTROS) || '{}') } } catch { /* sin filtros guardados */ }
 {
   const validas = new Set<string>(SECCIONES.map((x) => x.key))
   // 'idnLotes' (versión 2026-11-06-a) ahora es el indicador IDN.
+  f.definiciones = f.definiciones === true
   f.secciones = Array.isArray(f.secciones) ? [...new Set(f.secciones.map((k) => (k === ('idnLotes' as Seccion) ? 'ind:idn' : k)).filter((k) => validas.has(k)))] : [...SECCIONES_DEFECTO]
 }
 const guardarFiltros = () => { try { localStorage.setItem(KEY_FILTROS, JSON.stringify(f)) } catch { /* nada */ } }
@@ -180,7 +208,7 @@ function filtroSecciones() {
   }).join('')
   return `<div class="rs-fx rs-fx-sec"><span>Secciones e indicadores</span>
     <details class="rs-multi" id="rs-secciones"${seccionesAbierto ? ' open' : ''}><summary>${n === SECCIONES.length ? 'Todo' : n ? `${n} elegido${n === 1 ? '' : 's'}` : 'Nada elegido'}</summary>
-      <div class="rs-multi-pop"><div class="rs-multi-ayuda">Se muestran y salen en el PDF en el orden en que los marque (el número). Cada uno nuevo se agrega abajo.</div>
+      <div class="rs-multi-pop"><label class="rs-multi-defs"><input type="checkbox" id="rs-defs" ${f.definiciones ? 'checked' : ''}><span class="nm"><b>Mostrar definiciones</b><br><span class="rs-muted">Explica qué muestra cada gráfica elegida (también en el PDF).</span></span></label><div class="rs-multi-ayuda">Se muestran y salen en el PDF en el orden en que los marque (el número). Cada uno nuevo se agrega abajo.</div>
         ${filas}
         <div class="rs-multi-btns"><button type="button" class="rs-btn" id="rs-sec-defecto">Informe recomendado</button><button type="button" class="rs-btn" id="rs-sec-todas">Todo</button><button type="button" class="rs-btn" id="rs-sec-ninguna">Quitar todo</button></div></div>
     </details></div>`
@@ -209,6 +237,7 @@ function enlazar() {
     if (c.checked) f.secciones.push(k)
     render()
   }))
+  on('rs-defs', 'change', (e) => { f.definiciones = (e.target as HTMLInputElement).checked; render() })
   on('rs-sec-defecto', 'click', () => { f.secciones = [...SECCIONES_DEFECTO]; render() })
   on('rs-sec-todas', 'click', () => { f.secciones = [...SECCIONES_TODAS]; render() })
   on('rs-sec-ninguna', 'click', () => { f.secciones = []; render() })
@@ -300,7 +329,7 @@ function panelControl(lotes: PuntoLote[], ayudaAparte: boolean) {
   const c = calcularControl(lotes)
   const ayuda = `<details class="rs-ayuda"><summary>¿Cómo leer y cómo se calcula?</summary>${ayudaControl()}</details>`
   if (!c) return `<div class="rs-panel"><h3>Gráfico de control (SPC)</h3><p class="rs-sub">Se necesitan al menos 5 consecutivos con ${MIN_CERDOS} o más cerdos en el periodo para calcular los límites. Pruebe con un periodo más largo.</p></div>`
-  return `<div class="rs-panel"><h3>Gráfico de control (SPC)</h3><p class="rs-sub">IDN de cada consecutivo, en orden, frente a las zonas de variación normal de la granja. Toque un punto para ver el detalle.</p>
+  return `<div class="rs-panel"><h3>Gráfico de control (SPC)</h3>${definicion('spc')}<p class="rs-sub">IDN de cada consecutivo, en orden, frente a las zonas de variación normal de la granja. Toque un punto para ver el detalle.</p>
     ${graficaControl(c, f.lote)}
     <div class="rs-leyenda-spc">
       <div><b>Color de la franja = qué tan alto salió el consecutivo</b>
@@ -353,13 +382,13 @@ function vistaGranja(vis: Fila[], r: { desde: string; hasta: string }, red: Stat
   const indicador = (key: string) => {
     const ind = INDICADORES.find((i) => i.key === key)
     if (!ind) return ''
-    if (ind.key === 'idn') return `<div class="rs-panel"><h3>IDN por consecutivo</h3><p class="rs-sub">Cada punto es un consecutivo. Líneas guía: 0,56 moderado y 0,90 severo; la punteada verde es la red Cercafe.</p>${graficaLotes(lotes, desde, aFecha(r.hasta), red.idn)}</div>`
+    if (ind.key === 'idn') return `<div class="rs-panel"><h3>IDN por consecutivo</h3>${definicion('ind:idn')}<p class="rs-sub">Cada punto es un consecutivo. Líneas guía: 0,56 moderado y 0,90 severo; la punteada verde es la red Cercafe.</p>${graficaLotes(lotes, desde, aFecha(r.hasta), red.idn)}</div>`
     const esGdp = ind.key === 'gdp'
     const refRed = esGdp ? null : (red[ind.key] as number)
     const meta = ind.key === 'consol' ? META_CONSOL : null
     const nota = esGdp ? `Kilos estimados de pérdida en cada consecutivo. Total del periodo: ${ind.fmt(s.gdp)} kg.`
       : `Cada punto es un consecutivo. ${f.lote ? 'Consecutivo elegido' : 'Granja en el periodo'}: <b>${ind.fmt(s[ind.key] as number)}</b>${refRed != null ? ` · Red Cercafe: ${ind.fmt(refRed)} (línea punteada verde)` : ''}${meta != null ? ` · Meta: menor a ${META_CONSOL} % (línea roja)` : ''}.`
-    return `<div class="rs-panel"><h3>${esc(ind.lbl.replace(/^% /, ''))} por consecutivo</h3><p class="rs-sub">${nota}</p>${graficaIndicadorLotes(lotes, desde, aFecha(r.hasta), ind.key, ind.fmt, refRed, meta)}</div>`
+    return `<div class="rs-panel"><h3>${esc(ind.lbl.replace(/^% /, ''))} por consecutivo</h3>${definicion(`ind:${ind.key}`)}<p class="rs-sub">${nota}</p>${graficaIndicadorLotes(lotes, desde, aFecha(r.hasta), ind.key, ind.fmt, refRed, meta)}</div>`
   }
   const html: Record<(typeof SECCIONES_FIJAS)[number]['key'], () => string> = {
     ficha: () => `<div class="rs-panel"><div class="rs-farm">
@@ -382,10 +411,10 @@ function vistaGranja(vis: Fila[], r: { desde: string; hasta: string }, red: Stat
   </div>`,
     spc: () => panelControl(lotes, f.secciones.includes('spcAyuda')),
     spcAyuda: () => `<div class="rs-panel"><h3>Cómo leer el gráfico de control</h3><div class="rs-ayuda">${ayudaControl()}</div></div>`,
-    mapa: () => `<div class="rs-panel rs-angosto"><h3>Mapa pulmonar</h3><p class="rs-sub">Consolidación promedio por lóbulo${f.lote ? ' del consecutivo' : ''}.</p>
+    mapa: () => `<div class="rs-panel rs-angosto"><h3>Mapa pulmonar</h3>${definicion('mapa')}<p class="rs-sub">Consolidación promedio por lóbulo${f.lote ? ' del consecutivo' : ''}.</p>
       <div class="rs-lung"><div>${mp.svg}</div><div class="rs-lobes">${mp.lista}</div></div>
       <div class="rs-legend">${mp.leyenda}</div><div class="rs-callout"><b>Lectura:</b> ${mp.lectura}</div></div>`,
-    categorias: () => `<div class="rs-panel rs-angosto"><h3>Cerdos por categoría Madec</h3><p class="rs-sub">Qué porcentaje de los cerdos quedó en cada categoría, según cuánto pulmón tiene dañado (consolidación).</p>${graficaCategorias(s)}
+    categorias: () => `<div class="rs-panel rs-angosto"><h3>Cerdos por categoría Madec</h3>${definicion('categorias')}<p class="rs-sub">Qué porcentaje de los cerdos quedó en cada categoría, según cuánto pulmón tiene dañado (consolidación).</p>${graficaCategorias(s)}
       ${explicacionCategorias()}</div>`,
     tabla: () => `<div class="rs-panel"><h3>Consecutivos</h3><div class="rs-scroll"><table class="rs-table"><thead><tr><th>Consecutivo</th><th>Fecha</th><th class="n">Cerdos</th><th>IDN</th><th class="n">Consolidación</th><th class="n">Neumonía</th><th class="n">Pleuritis</th><th class="n">GDP (kg)</th></tr></thead><tbody>
     ${[...lotes].sort((a, b) => b.fecha.getTime() - a.fecha.getTime()).map((l) => `<tr tabindex="0" class="${l.consec === f.lote ? 'sel' : ''}" data-go="${esc(f.granja)}" data-lote="${l.consec === f.lote ? '' : esc(l.consec)}"><td>${esc(l.consec)}</td><td>${l.fecha.toISOString().slice(0, 10)}</td><td class="n">${l.s.n}</td><td>${pill(l.s.idn)}</td><td class="n"${l.s.consol >= META_CONSOL ? ' style="color:var(--rs-sev);font-weight:600" title="Por encima de la meta"' : ''}>${fmt(l.s.consol)} %</td><td class="n">${fmt(l.s.neum, 1)} %</td><td class="n">${fmt(l.s.pleur, 1)} %</td><td class="n">${fmt(l.s.gdp, 1)}</td></tr>`).join('')}

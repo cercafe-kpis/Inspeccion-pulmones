@@ -183,3 +183,9 @@
 /* PDF vertical (informe de una granja): más angosto para que la letra quede legible en la hoja */
 .rs.rs-pdf-v{width:900px;}
 .rs-pdf .rs-cierre{padding-top:10px;}
+
+/* "Mostrar definiciones": recuadro bajo el título de cada gráfica */
+.rs-def{font-size:13px;line-height:1.5;color:var(--text);background:var(--gl);border-left:3px solid var(--g);border-radius:0;padding:8px 12px;margin:8px 0 10px;}
+.rs-def b{color:var(--g);}
+.rs-filtros .rs-multi-pop label.rs-multi-defs{align-items:flex-start;background:var(--gl);margin-bottom:6px;}
+.rs-multi-defs .rs-muted{font-weight:400;}
